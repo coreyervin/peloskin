@@ -15,14 +15,10 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
@@ -147,13 +143,12 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
 
     private val unit: Float get() = resources.displayMetrics.widthPixels / 100f
 
-    private fun baseParams(touchable: Boolean) = LayoutParams(
+    private fun baseParams() = LayoutParams(
         LayoutParams.WRAP_CONTENT,
         LayoutParams.WRAP_CONTENT,
         LayoutParams.TYPE_APPLICATION_OVERLAY,
         LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            (if (touchable) 0 else LayoutParams.FLAG_NOT_TOUCHABLE),
+            LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         PixelFormat.TRANSLUCENT,
     )
 
@@ -166,33 +161,18 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun showFull() {
-        val display = baseParams(touchable = false).apply {
+        // Like Grupetto, the whole skin is one tap target: tap it to switch layouts.
+        val display = baseParams().apply {
             width = LayoutParams.MATCH_PARENT
             gravity = Gravity.BOTTOM
         }
-        add(composeView { FullSkin(skinState()) }, display)
-
-        // The fold button gets its own small touchable window, so the rest of the
-        // skin never blocks taps meant for the Peloton app underneath.
-        val pad = 1f
-        val button = baseParams(touchable = true).apply {
-            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            y = (((StripHeight - FoldButton) / 2f - pad) * unit).roundToInt()
-        }
-        add(composeView {
-            val s = rememberScale()
-            Box(
-                Modifier
-                    .clickable(remember { MutableInteractionSource() }, null) { mode.value = SkinMode.Compact }
-                    .padding(s.dp(pad))
-            ) { FoldButtonView(expanded = true) }
-        }, button)
+        add(composeView { FullSkin(skinState(), onToggle = { mode.value = SkinMode.Compact }) }, display)
     }
 
     private fun showCompact() {
         val edge = SettingsStore.settings.value.compactEdge
         val margin = (1.4f * unit).roundToInt()
-        val params = baseParams(touchable = true).apply {
+        val params = baseParams().apply {
             gravity = Gravity.CENTER_HORIZONTAL or if (edge == CompactEdge.Top) Gravity.TOP else Gravity.BOTTOM
             y = margin
         }
@@ -229,6 +209,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                 CompactSkin(
                     state = skinState(),
                     metrics = settings.compactMetrics,
+                    onToggle = { mode.value = SkinMode.Full },
                     modifier = Modifier.onSizeChanged { size ->
                         if (params.width != size.width || params.height != size.height) {
                             params.width = size.width
@@ -236,11 +217,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                             runCatching { windows.updateViewLayout(frame, params) }
                         }
                     },
-                ) {
-                    Box(Modifier.clickable(remember { MutableInteractionSource() }, null) { mode.value = SkinMode.Full }) {
-                        FoldButtonView(expanded = false)
-                    }
-                }
+                )
             }
         })
         add(frame, params)

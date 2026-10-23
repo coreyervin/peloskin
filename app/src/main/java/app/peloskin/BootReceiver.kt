@@ -9,7 +9,8 @@ import app.peloskin.store.SettingsStore
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        // Start with the bike, and come back after an update (installing one stops the app).
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         SettingsStore.init(context)
         if (SettingsStore.settings.value.startOnBoot && Settings.canDrawOverlays(context)) {
             SkinService.start(context)

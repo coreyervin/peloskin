@@ -3,6 +3,8 @@ package app.peloskin.overlay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -99,15 +101,18 @@ private fun Label(text: String, s: Scale, size: Float = 0.78f, color: Color = In
 
 // ---------------------------------------------------------------- full skin
 
-/** Drawn in a window that ignores touches; the fold button lives in its own small window. */
+/** Tap anywhere on it to switch to the single-line bar, like Grupetto's overlay. */
 @Composable
-fun FullSkin(state: SkinState) {
+fun FullSkin(state: SkinState, onToggle: () -> Unit) {
     val s = rememberScale()
     val live = state.live()
     val r = state.ride
     // AVG and BEST stay up after a ride ends, until the next one starts.
     val stats = live && (r.riding || r.elapsedSec > 0)
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = onToggle),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Box(
             Modifier
                 .fillMaxWidth()
@@ -137,8 +142,9 @@ fun FullSkin(state: SkinState) {
                 StripDivider(s)
                 StripItem("Distance", "(mi)", r.distanceMi.twoDp(live), s)
             }
-            // Placeholder: the real, tappable fold button is a separate window drawn on top.
-            Spacer(Modifier.width(s.dp(FoldSlot)))
+            Box(Modifier.width(s.dp(FoldSlot)), contentAlignment = Alignment.Center) {
+                FoldButtonView(expanded = true)
+            }
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Start) {
                 StripItem("Total output", "(kj)", r.totalKj.whole(live), s)
                 StripDivider(s)
@@ -149,14 +155,13 @@ fun FullSkin(state: SkinState) {
 }
 
 /** Width of the gap in the strip where the fold button sits, in u. */
-const val FoldSlot = 3.2f
+private const val FoldSlot = 3.2f
 /** Fold button diameter, in u. */
-const val FoldButton = 1.9f
-/** Strip height, in u. */
-const val StripHeight = 4.2f
+private const val FoldButton = 1.9f
 
+/** Shows which way a tap will switch the layout. */
 @Composable
-fun FoldButtonView(expanded: Boolean) {
+private fun FoldButtonView(expanded: Boolean) {
     val s = rememberScale()
     Box(
         Modifier.size(s.dp(FoldButton)).border(1.dp, Color(0x73FFFFFF), CircleShape),
@@ -282,14 +287,15 @@ private fun StripDivider(s: Scale) = Box(Modifier.width(1.dp).height(s.dp(2.4f))
 
 // ------------------------------------------------------------- compact skin
 
-/** One-line bar. Its window takes touches: tap ⌃ to expand, drag to move. */
+/** One-line bar: tap anywhere on it to go back to the full layout, drag it to move it. */
 @Composable
-fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, modifier: Modifier = Modifier, expandButton: @Composable () -> Unit) {
+fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, onToggle: () -> Unit, modifier: Modifier = Modifier) {
     val s = rememberScale()
     val live = state.live()
     val r = state.ride
     Row(
         modifier
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onToggle)
             .background(Color(0xEB181A1F), RoundedCornerShape(s.dp(2.2f)))
             .padding(horizontal = s.dp(1.2f), vertical = s.dp(0.7f)),
         verticalAlignment = Alignment.CenterVertically,
@@ -322,7 +328,7 @@ fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, modifier: Modifi
             }
         }
         Spacer(Modifier.width(s.dp(0.5f)))
-        expandButton()
+        FoldButtonView(expanded = false)
     }
 }
 

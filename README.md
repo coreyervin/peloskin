@@ -26,13 +26,13 @@ changes something, Grupetto adapts and PeloSkin keeps working.
 |   |   |
 |---|---|
 | **Full layout** | Cadence, Output and Resistance in big numbers, each with AVG (green ▲ or red ▼ trend arrow) and BEST. Below them is a strip with speed, distance, total output (kJ) and calories. |
-| **Single-line bar** | Tap ⌄ to shrink everything to one line. Drag it to the top or bottom edge, and choose which numbers it shows. |
+| **Tap to switch** | Like Grupetto's overlay, tap anywhere on the skin to switch between the full layout and a single-line bar, and tap the bar to switch back. |
+| **Single-line bar** | One thin line with the numbers you pick. Drag it to the top or bottom edge, and it stays there. |
 | **Power zones** | A 7-zone bar with your % of FTP, using Peloton's zone boundaries. |
 | **Automatic FTP** | Your FTP is 95% of your best 20-minute average. PeloSkin tracks that on every ride and raises your FTP when you beat it. Easy rides never lower it, and a lower retest is one tap away in your ride history. |
 | **Ride history** | Keeps your last 100 rides with duration, average watts, kJ and best 20 minutes. |
 | **Backup** | Settings, FTP and history are mirrored to `Documents/PeloSkin`, and restored automatically after a reinstall. |
-| **Stays out of the way** | The full layout ignores touches, except for its fold button, so it never blocks the Peloton app's controls. |
-| **Starts with the bike** | Starts at boot and reconnects to Grupetto on its own. If Android restarts it mid-ride, the ride carries on. |
+| **Starts with the bike** | Starts at boot and after updates, and reconnects to Grupetto on its own. If Android restarts it mid-ride, the ride carries on. |
 | **Heart rate** | Appears automatically if a heart rate strap is paired to Grupetto. |
 
 <img src="docs/compact.png" alt="PeloSkin single-line bar showing cadence, output with zone blocks, resistance, speed and total output" width="100%">
