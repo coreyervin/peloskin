@@ -230,12 +230,22 @@ private fun SideStat(label: String, value: String, trend: Boolean?, alignEnd: Bo
         Label(label, s, size = 0.72f, color = Dim)
         Spacer(Modifier.height(s.dp(0.35f)))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            trend?.let {
-                Text(if (it) "▲" else "▼", color = if (it) Up else Down,
-                    style = TextStyle(fontSize = s.sp(0.8f)), modifier = Modifier.padding(end = s.dp(0.3f)))
-            }
+            trend?.let { TrendArrow(up = it, s = s, modifier = Modifier.padding(end = s.dp(0.3f))) }
             Text(value, color = Ink, style = TextStyle(fontFamily = Figtree, fontSize = s.sp(1.45f)))
         }
+    }
+}
+
+/** Drawn rather than typed: the Peloton tablet's fonts have no ▲ ▼ glyphs. */
+@Composable
+private fun TrendArrow(up: Boolean, s: Scale, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(s.dp(0.7f), s.dp(0.6f))) {
+        val path = Path().apply {
+            if (up) { moveTo(0f, size.height); lineTo(size.width / 2, 0f); lineTo(size.width, size.height) }
+            else { moveTo(0f, 0f); lineTo(size.width / 2, size.height); lineTo(size.width, 0f) }
+            close()
+        }
+        drawPath(path, if (up) Up else Down)
     }
 }
 
