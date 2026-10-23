@@ -56,7 +56,8 @@ val Figtree = FontFamily(
 private val Ink = Color.White
 private val Dim = Color(0xFFC9CCD2)
 private val Divider = Color(0x38FFFFFF)
-private val StripBg = Color(0xF0181A1F)
+// Solid, so Grupetto's minimized bar parked underneath doesn't show through.
+private val StripBg = Color(0xFF181A1F)
 private val Up = Color(0xFF3FD28B)
 private val Down = Color(0xFFFF4A55)
 private val ZoneOn = Color(0xFF41C7C7)

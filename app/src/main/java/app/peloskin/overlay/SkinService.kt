@@ -42,6 +42,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -126,6 +128,11 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             combine(mode, SettingsStore.settings.map { it.compactEdge }) { m, edge ->
                 m to if (m == SkinMode.Compact) edge else null
             }.distinctUntilChanged().collect { (m, _) -> showWindows(m) }
+        }
+        lifecycleScope.launch {
+            // Overlay windows stack in the order they're added. When Grupetto (re)starts it
+            // adds its windows on top of ours, so redraw once its feed comes up to stay on top.
+            feed.status.drop(1).filter { it == FeedStatus.Connected }.collect { showWindows(mode.value) }
         }
     }
 
