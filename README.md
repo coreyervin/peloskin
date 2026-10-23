@@ -25,7 +25,7 @@ changes something, Grupetto adapts and PeloSkin keeps working.
 
 |   |   |
 |---|---|
-| **Full layout** | Cadence, Output and Resistance in big numbers, each with AVG (green ▲ or red ▼ trend arrow) and BEST. Below them is a strip with speed, distance, total output (kJ) and calories. |
+| **Full layout** | Cadence, Output and Resistance in big numbers, each with AVG (green ▲ or red ▼ trend arrow) and BEST. Below them is a solid strip with speed, distance, total output (kJ) and calories. |
 | **Tap to switch** | Like Grupetto's overlay, tap anywhere on the skin to switch between the full layout and a single-line bar, and tap the bar to switch back. |
 | **Single-line bar** | One thin line with the numbers you pick. Drag it to the top or bottom edge, and it stays there. |
 | **Power zones** | A 7-zone bar with your % of FTP, using Peloton's zone boundaries. |
@@ -33,6 +33,7 @@ changes something, Grupetto adapts and PeloSkin keeps working.
 | **Ride history** | Keeps your last 100 rides with duration, average watts, kJ and best 20 minutes. |
 | **Backup** | Settings, FTP and history are mirrored to `Documents/PeloSkin`, and restored automatically after a reinstall. |
 | **Starts with the bike** | Starts at boot and after updates, and reconnects to Grupetto on its own. If Android restarts it mid-ride, the ride carries on. |
+| **Plays well with Grupetto** | Stays on top of Grupetto's overlay, so Grupetto's minimized bar can sit hidden behind the strip. |
 | **Heart rate** | Appears automatically if a heart rate strap is paired to Grupetto. |
 
 <img src="docs/compact.png" alt="PeloSkin single-line bar showing cadence, output with zone blocks, resistance, speed and total output" width="100%">
@@ -69,8 +70,8 @@ avoids both.
 
 ## Requirements
 
-- A Peloton bike tablet with Grupetto installed and running. Tested on a Gen 1 bike's
-  Android 11 setup; it should work on Android 8 and up.
+- A Peloton bike tablet with Grupetto installed and running. Used daily on a Gen 1 bike
+  (PLTN-RB1VQ, Android 11); it should work on Android 8 and up.
 - Grupetto's **DirCon** option on (it's on by default).
 - `adb` access to the tablet over USB or wireless debugging.
 
@@ -92,7 +93,35 @@ adb shell dumpsys deviceidle whitelist +app.peloskin
 adb shell am start -n app.peloskin/.MainActivity
 ```
 
-Tap **Start**, then minimize Grupetto's own overlay to its small pill.
+Tap **Start**. After that, PeloSkin starts with the bike and comes back by itself after updates.
+
+### Tuck Grupetto's overlay away
+
+Grupetto always shows its own overlay, and it can't be turned off without also stopping the
+data PeloSkin reads. The tidy setup is to park Grupetto's minimized bar at the bottom center,
+where PeloSkin's solid bottom strip covers it:
+
+1. Tap PeloSkin once so it switches to the single-line bar and is out of the way.
+2. If Grupetto's bar is minimized, tap it to expand it. Grupetto can only be dragged while
+   expanded.
+3. Drag Grupetto's overlay to the bottom of the screen, centered.
+4. Tap its ⌄ to minimize it, then tap PeloSkin to bring the full layout back.
+
+Grupetto remembers that position. It doesn't remember being minimized, so after a reboot,
+or after you quit and reopen Grupetto, repeat steps 1 and 4.
+
+## Using it
+
+- **Switch layouts:** tap anywhere on the skin. The full layout becomes the single-line bar,
+  and tapping the bar brings the full layout back.
+- **Move the single-line bar:** drag it to the top or bottom edge.
+- **Open settings:** tap the **PeloSkin** icon in your app drawer (a dark tile with teal bars).
+  Long-press it to put it on the home screen.
+- **Turn it off:** open PeloSkin and tap **Stop**. Leaving the settings screen doesn't stop the
+  skin.
+- **Reaching the Peloton app's buttons:** the full layout covers the bottom of the screen, and
+  that's where the Peloton app puts *End Workout* and the progress bar. Tap the skin once to
+  shrink it first.
 
 <img src="docs/settings.png" alt="PeloSkin settings screen: start and stop, FTP, layout options, backup and recent rides" width="100%">
 
@@ -160,12 +189,17 @@ Nothing changes for PeloSkin. The feed is the industry-standard FTMS format that
 needs for Zwift compatibility.
 
 **It says "Can't reach Grupetto".**
-Open Grupetto and check that it's running with DirCon on. PeloSkin keeps retrying every few
-seconds.
+Grupetto's overlay isn't running, which happens if you tap **Quit** in Grupetto. Open
+Grupetto, tap **Start overlay**, and check that Network → DirCon is on. PeloSkin reconnects
+on its own within a few seconds.
+
+**Can I hide Grupetto's overlay completely?**
+Not yet. Grupetto has no hide option, and blocking its overlay stops its Bluetooth and DirCon
+too. Park it behind PeloSkin's strip instead (see [Tuck Grupetto's overlay away](#tuck-grupettos-overlay-away)).
 
 **Why doesn't it show the class timer or cadence and resistance targets?**
 Only the Peloton app knows those, and it doesn't share them. The Peloton app already shows its
-own timer.
+own timer and a targets panel, and it doesn't clash with PeloSkin.
 
 **Will it slow the bike down?**
 It's under 1 MB, uses about 35 MB of memory and barely any CPU, and updates once a second.
