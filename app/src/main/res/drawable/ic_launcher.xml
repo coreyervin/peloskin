@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Seven power-zone blocks rising, on a dark tile. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#181A1F" android:pathData="M18,10h72a8,8 0 0 1 8,8v72a8,8 0 0 1 -8,8h-72a8,8 0 0 1 -8,-8v-72a8,8 0 0 1 8,-8z"/>
+    <path android:fillColor="#41C7C7" android:pathData="M24,70h7v10h-7z"/>
+    <path android:fillColor="#41C7C7" android:pathData="M33.5,62h7v18h-7z"/>
+    <path android:fillColor="#41C7C7" android:pathData="M43,54h7v26h-7z"/>
+    <path android:fillColor="#41C7C7" android:pathData="M52.5,46h7v34h-7z"/>
+    <path android:fillColor="#3A3E46" android:pathData="M62,38h7v42h-7z"/>
+    <path android:fillColor="#3A3E46" android:pathData="M71.5,32h7v48h-7z"/>
+    <path android:fillColor="#3A3E46" android:pathData="M81,26h3v54h-3z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M24,28h30v3h-30z"/>
+</vector>
