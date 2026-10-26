@@ -1,4 +1,4 @@
-package app.peloskin.overlay
+package app.peloskin.ui.overlay
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -29,21 +29,21 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import app.peloskin.MainActivity
-import app.peloskin.feed.FeedStatus
-import app.peloskin.feed.GrupettoFeed
-import app.peloskin.ride.RideSnapshot
-import app.peloskin.ride.RideTracker
-import app.peloskin.store.CompactEdge
-import app.peloskin.store.SettingsStore
-import app.peloskin.store.SkinMode
+import app.peloskin.ui.settings.MainActivity
+import app.peloskin.data.bike.BikeFeed
+import app.peloskin.data.bike.BikeModel
+import app.peloskin.domain.BikeSample
+import app.peloskin.data.bike.FeedStatus
+import app.peloskin.domain.RideSnapshot
+import app.peloskin.domain.RideTracker
+import app.peloskin.domain.CompactEdge
+import app.peloskin.data.store.SettingsStore
+import app.peloskin.domain.SkinMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -58,8 +58,12 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         val running: StateFlow<Boolean> = _running
 
         private val _feedStatus = MutableStateFlow(FeedStatus.Connecting)
-        /** Grupetto connection, for the settings screen. */
+        /** Bike connection, for the settings screen. */
         val feedStatus: StateFlow<FeedStatus> = _feedStatus
+
+        private val _feedSource = MutableStateFlow<String?>(null)
+        /** Which Peloton service the numbers come from, for the settings screen. */
+        val feedSource: StateFlow<String?> = _feedSource
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, SkinService::class.java))
@@ -76,7 +80,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
     private lateinit var windows: WindowManager
     private val attached = mutableListOf<View>()
 
-    private val feed = GrupettoFeed()
+    private lateinit var feed: BikeFeed
     private val ride = MutableStateFlow(RideSnapshot())
     private val tracker = RideTracker(onRideFinished = { SettingsStore.recordRide(it) })
     private val mode = MutableStateFlow(SkinMode.Full)
@@ -100,12 +104,25 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         SettingsStore.loadCheckpoint()?.let { saved ->
             if (tracker.resume(saved, SystemClock.elapsedRealtime())) ride.value = tracker.snapshot
         }
+        feed = BikeFeed(BikeModel.detect(this).sources(this), demo = { SettingsStore.demoRide.value })
         feed.start(lifecycleScope)
         lifecycleScope.launch { feed.status.collect { _feedStatus.value = it } }
+        lifecycleScope.launch { feed.source.collect { _feedSource.value = it } }
+        // The bike reports several times a second. Every reading goes into the ride totals,
+        // but the screen redraws 4 times a second showing the average since the last redraw.
+        val window = DisplayWindow()
         lifecycleScope.launch {
             feed.samples.collect {
                 tracker.onSample(SystemClock.elapsedRealtime(), it)
-                ride.value = tracker.snapshot
+                window.add(it)
+            }
+        }
+        lifecycleScope.launch {
+            while (true) {
+                delay(250)
+                window.drain()?.let { avg ->
+                    ride.value = tracker.snapshot.copy(power = avg.power, cadence = avg.cadence, speedMph = avg.speedMph)
+                }
             }
         }
         lifecycleScope.launch {
@@ -114,7 +131,8 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                 delay(5_000)
                 val now = SystemClock.elapsedRealtime()
                 tracker.tick(now)
-                ride.value = tracker.snapshot
+                // Keep the averaged live numbers; this only picks up a ride ending.
+                ride.value = tracker.snapshot.copy(power = ride.value.power, cadence = ride.value.cadence, speedMph = ride.value.speedMph)
                 if (++ticks % 6 == 0) saveCheckpoint(now)
             }
         }
@@ -129,11 +147,6 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                 m to if (m == SkinMode.Compact) edge else null
             }.distinctUntilChanged().collect { (m, _) -> showWindows(m) }
         }
-        lifecycleScope.launch {
-            // Overlay windows stack in the order they're added. When Grupetto (re)starts it
-            // adds its windows on top of ours, so redraw once its feed comes up to stay on top.
-            feed.status.drop(1).filter { it == FeedStatus.Connected }.collect { showWindows(mode.value) }
-        }
     }
 
     private fun saveCheckpoint(now: Long) = SettingsStore.saveCheckpoint(tracker.checkpoint(now))
@@ -141,7 +154,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
     override fun onDestroy() {
         if (_running.value) saveCheckpoint(SystemClock.elapsedRealtime())
         removeWindows()
-        feed.stop()
+        if (::feed.isInitialized) feed.stop()
         _running.value = false
         super.onDestroy()
     }
@@ -168,7 +181,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun showFull() {
-        // Like Grupetto, the whole skin is one tap target: tap it to switch layouts.
+        // The whole skin is one tap target: tap it to switch layouts.
         val display = baseParams().apply {
             width = LayoutParams.MATCH_PARENT
             gravity = Gravity.BOTTOM
@@ -234,10 +247,9 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
     private fun skinState(): SkinState {
         val r by ride.collectAsState()
         val f by feed.status.collectAsState()
-        val hr by feed.heartRate.collectAsState()
         val settings by SettingsStore.settings.collectAsState()
         val banner by SettingsStore.ftpBanner.collectAsState()
-        return SkinState(r, f, settings.ftp, hr, banner)
+        return SkinState(r, f, settings.ftp, banner)
     }
 
     private fun composeView(content: @androidx.compose.runtime.Composable () -> Unit) =
@@ -275,5 +287,24 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         } else {
             startForeground(NotificationId, notification)
         }
+    }
+}
+
+/** Averages readings between screen redraws. Readings arrive on the main thread. */
+private class DisplayWindow {
+    private var power = 0f
+    private var cadence = 0f
+    private var speed = 0f
+    private var count = 0
+
+    fun add(sample: BikeSample) {
+        power += sample.power; cadence += sample.cadence; speed += sample.speedMph; count++
+    }
+
+    fun drain(): BikeSample? {
+        if (count == 0) return null
+        val avg = BikeSample(power / count, cadence / count, 0f, speed / count)
+        power = 0f; cadence = 0f; speed = 0f; count = 0
+        return avg
     }
 }

@@ -1,4 +1,4 @@
-package app.peloskin.overlay
+package app.peloskin.ui.overlay
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -40,10 +40,10 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import app.peloskin.R
-import app.peloskin.feed.FeedStatus
-import app.peloskin.ride.PowerZones
-import app.peloskin.ride.RideSnapshot
-import app.peloskin.store.CompactMetric
+import app.peloskin.data.bike.FeedStatus
+import app.peloskin.domain.PowerZones
+import app.peloskin.domain.RideSnapshot
+import app.peloskin.domain.CompactMetric
 import kotlin.math.roundToInt
 
 val Figtree = FontFamily(
@@ -56,7 +56,6 @@ val Figtree = FontFamily(
 private val Ink = Color.White
 private val Dim = Color(0xFFC9CCD2)
 private val Divider = Color(0x38FFFFFF)
-// Solid, so Grupetto's minimized bar parked underneath doesn't show through.
 private val StripBg = Color(0xFF181A1F)
 private val Up = Color(0xFF3FD28B)
 private val Down = Color(0xFFFF4A55)
@@ -83,7 +82,6 @@ data class SkinState(
     val ride: RideSnapshot,
     val feed: FeedStatus,
     val ftp: Int?,
-    val heartRate: Int?,
     val ftpBanner: Int?,
 )
 
@@ -102,7 +100,7 @@ private fun Label(text: String, s: Scale, size: Float = 0.78f, color: Color = In
 
 // ---------------------------------------------------------------- full skin
 
-/** Tap anywhere on it to switch to the single-line bar, like Grupetto's overlay. */
+/** Tap anywhere on it to switch to the single-line bar. */
 @Composable
 fun FullSkin(state: SkinState, onToggle: () -> Unit) {
     val s = rememberScale()
@@ -138,7 +136,6 @@ fun FullSkin(state: SkinState, onToggle: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
-                state.heartRate?.let { StripItem("Heart rate", "(bpm)", it.toString(), s); StripDivider(s) }
                 StripItem("Speed", "(mph)", r.speedMph.oneDp(live), s)
                 StripDivider(s)
                 StripItem("Distance", "(mi)", r.distanceMi.twoDp(live), s)
@@ -183,8 +180,9 @@ private fun FoldButtonView(expanded: Boolean) {
 private fun StatusLine(state: SkinState, s: Scale) {
     val text = when {
         state.ftpBanner != null -> "New FTP ${state.ftpBanner} · from your best 20 minutes"
-        state.feed == FeedStatus.NotFound -> "Can't reach Grupetto · is it running?"
-        state.feed == FeedStatus.Connecting -> "Connecting to Grupetto…"
+        state.feed == FeedStatus.NotFound -> "Can't read the bike · is the sensor cable connected?"
+        state.feed == FeedStatus.Unsupported -> "This bike isn't supported yet"
+        state.feed == FeedStatus.Connecting -> "Connecting to the bike…"
         else -> null
     } ?: return
     Text(
@@ -313,13 +311,16 @@ fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, onToggle: () -> 
     ) {
         if (!live) {
             Text(
-                if (state.feed == FeedStatus.NotFound) "Can't reach Grupetto" else "Connecting to Grupetto…",
+                when (state.feed) {
+                    FeedStatus.NotFound -> "Can't read the bike"
+                    FeedStatus.Unsupported -> "Bike not supported yet"
+                    else -> "Connecting to the bike…"
+                },
                 color = Dim, modifier = Modifier.padding(horizontal = s.dp(1.1f)),
                 style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = s.sp(0.9f)),
             )
         } else {
-            val shown = metrics.filter { it != CompactMetric.HeartRate || state.heartRate != null }
-            shown.forEachIndexed { i, m ->
+            metrics.forEachIndexed { i, m ->
                 if (i > 0) Box(Modifier.width(1.dp).height(s.dp(1.6f)).background(Color(0x2EFFFFFF)))
                 when (m) {
                     CompactMetric.Cadence -> CompactItem("Cadence", r.cadence.whole(true), "rpm", s)
@@ -334,7 +335,6 @@ fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, onToggle: () -> 
                     CompactMetric.Distance -> CompactItem("Distance", r.distanceMi.twoDp(true), "mi", s)
                     CompactMetric.TotalOutput -> CompactItem("Total", r.totalKj.whole(true), "kJ", s)
                     CompactMetric.Calories -> CompactItem("Calories", r.calories.whole(true), "kcal", s)
-                    CompactMetric.HeartRate -> CompactItem("Heart rate", state.heartRate.toString(), "bpm", s)
                 }
             }
         }

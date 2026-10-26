@@ -1,4 +1,4 @@
-package app.peloskin
+package app.peloskin.ui.settings
 
 import android.Manifest
 import android.content.Intent
@@ -52,15 +52,16 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import app.peloskin.feed.FeedStatus
-import app.peloskin.overlay.Figtree
-import app.peloskin.overlay.SkinService
-import app.peloskin.ride.Ftp
-import app.peloskin.ride.FtpSource
-import app.peloskin.store.CompactEdge
-import app.peloskin.store.CompactMetric
-import app.peloskin.store.SettingsStore
-import app.peloskin.store.SkinMode
+import app.peloskin.data.bike.BikeModel
+import app.peloskin.data.bike.FeedStatus
+import app.peloskin.ui.overlay.Figtree
+import app.peloskin.ui.overlay.SkinService
+import app.peloskin.domain.Ftp
+import app.peloskin.domain.FtpSource
+import app.peloskin.domain.CompactEdge
+import app.peloskin.domain.CompactMetric
+import app.peloskin.data.store.SettingsStore
+import app.peloskin.domain.SkinMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -114,6 +115,9 @@ class MainActivity : ComponentActivity() {
         val settings by SettingsStore.settings.collectAsState()
         val running by SkinService.running.collectAsState()
         val feed by SkinService.feedStatus.collectAsState()
+        val source by SkinService.feedSource.collectAsState()
+        val demo by SettingsStore.demoRide.collectAsState()
+        val model = remember { BikeModel.detect(this) }
         val perms by permissions.collectAsState()
         var message by remember { mutableStateOf<String?>(null) }
 
@@ -124,8 +128,7 @@ class MainActivity : ComponentActivity() {
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 Text("PeloSkin", color = Ink, style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 34.sp))
-                Text("Peloton-style metrics drawn from Grupetto's feed. Grupetto must be running.",
-                    color = Muted, style = bodyStyle)
+                Text("Peloton-style ride metrics, read straight from your bike.", color = Muted, style = bodyStyle)
 
                 Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -135,11 +138,15 @@ class MainActivity : ComponentActivity() {
                                     Text(if (running) "Showing" else "Off", color = Ink, style = titleStyle)
                                     if (running) Text(
                                         when (feed) {
-                                            FeedStatus.Connected -> "Getting numbers from Grupetto"
-                                            FeedStatus.Connecting -> "Connecting to Grupetto…"
-                                            FeedStatus.NotFound -> "Can't reach Grupetto. Open it and check that DirCon is on."
+                                            FeedStatus.Connected -> listOfNotNull("Reading the bike", source).joinToString(" · ")
+                                            FeedStatus.Connecting -> "Connecting to the bike…"
+                                            FeedStatus.NotFound -> "Can't read the bike. Check that the sensor cable is plugged into the tablet."
+                                            FeedStatus.Unsupported ->
+                                                if (model == BikeModel.NotPeloton) "No Peloton bike on this device. Turn on Demo ride to try PeloSkin."
+                                                else "${model.displayName} isn't supported yet."
                                         },
-                                        color = if (feed == FeedStatus.NotFound) Warn else Muted, style = bodyStyle,
+                                        color = if (feed == FeedStatus.Connected || feed == FeedStatus.Connecting) Muted else Warn,
+                                        style = bodyStyle,
                                     )
                                 }
                                 if (running) GhostButton(onClick = { SkinService.stop(this@MainActivity) }) { Text("Stop") }
@@ -157,6 +164,10 @@ class MainActivity : ComponentActivity() {
                             }
                             Toggle("Start when the bike turns on", settings.startOnBoot) { v ->
                                 SettingsStore.update { it.copy(startOnBoot = v) }
+                            }
+                            // Lets you try PeloSkin, or work on it, away from a Peloton.
+                            if (model == BikeModel.NotPeloton) {
+                                Toggle("Demo ride (no Peloton found on this device)", demo) { SettingsStore.setDemoRide(it) }
                             }
                         }
 
@@ -180,8 +191,7 @@ class MainActivity : ComponentActivity() {
                                         Row(Modifier.weight(1f).clickable { toggleMetric(m) }, verticalAlignment = Alignment.CenterVertically) {
                                             Checkbox(m in settings.compactMetrics, { toggleMetric(m) },
                                                 colors = CheckboxDefaults.colors(checkedColor = Accent, uncheckedColor = Muted))
-                                            Text(m.label + if (m == CompactMetric.HeartRate) " (if paired to Grupetto)" else "",
-                                                color = Ink, style = bodyStyle)
+                                            Text(m.label, color = Ink, style = bodyStyle)
                                         }
                                     }
                                 }
@@ -245,7 +255,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun FtpSection(settings: app.peloskin.store.Settings) {
+    private fun FtpSection(settings: app.peloskin.domain.Settings) {
         var text by remember(settings.ftp) { mutableStateOf(settings.ftp?.toString() ?: "") }
         Text(
             when {

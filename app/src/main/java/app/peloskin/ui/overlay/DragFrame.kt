@@ -1,4 +1,4 @@
-package app.peloskin.overlay
+package app.peloskin.ui.overlay
 
 import android.annotation.SuppressLint
 import android.content.Context

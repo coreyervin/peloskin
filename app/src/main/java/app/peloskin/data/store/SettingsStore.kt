@@ -1,4 +1,4 @@
-package app.peloskin.store
+package app.peloskin.data.store
 
 import android.Manifest
 import android.content.Context
@@ -7,12 +7,14 @@ import android.os.Build
 import android.os.Environment
 import android.util.Log
 import androidx.core.util.AtomicFile
-import app.peloskin.ride.Ftp
-import app.peloskin.ride.FtpSource
-import app.peloskin.ride.RideSummary
+import app.peloskin.domain.Ftp
+import app.peloskin.domain.FtpSource
+import app.peloskin.domain.RideCheckpoint
+import app.peloskin.domain.RideSummary
+import app.peloskin.domain.Settings
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.io.File
 
 /**
  * Settings, FTP and ride history. Saved in the app's own storage, and mirrored to
@@ -27,6 +29,17 @@ object SettingsStore {
 
     private val _settings = MutableStateFlow(Settings())
     val settings: StateFlow<Settings> = _settings
+
+    /**
+     * Demo ride for trying PeloSkin on a device that isn't a Peloton. Kept out of the backup.
+     */
+    private val _demoRide = MutableStateFlow(false)
+    val demoRide: StateFlow<Boolean> = _demoRide
+
+    fun setDemoRide(on: Boolean) {
+        _demoRide.value = on
+        appContext.getSharedPreferences("peloskin", Context.MODE_PRIVATE).edit().putBoolean("demoRide", on).apply()
+    }
 
     /** Set when a ride raises the FTP, so the skin can show a short banner. */
     private val _ftpBanner = MutableStateFlow<Int?>(null)
@@ -57,6 +70,7 @@ object SettingsStore {
         appContext = context.applicationContext
         appFile = File(context.filesDir, "settings.json")
         checkpointFile = File(context.filesDir, "ride-checkpoint.json")
+        _demoRide.value = appContext.getSharedPreferences("peloskin", Context.MODE_PRIVATE).getBoolean("demoRide", false)
         val local = read(appFile)
         if (local != null) {
             // The app's own copy is the source of truth; the backup only mirrors it.
@@ -149,16 +163,16 @@ object SettingsStore {
     }
 
     // The in-progress ride, kept only in app storage (not the backup).
-    fun saveCheckpoint(json: String?) {
+    fun saveCheckpoint(checkpoint: RideCheckpoint?) {
         try {
-            if (json == null) checkpointFile.delete() else writeText(checkpointFile, json)
+            if (checkpoint == null) checkpointFile.delete() else writeText(checkpointFile, CheckpointJson.encode(checkpoint))
         } catch (e: Exception) {
             Log.w(Tag, "Could not save ride checkpoint", e)
         }
     }
 
-    fun loadCheckpoint(): String? = try {
-        if (checkpointFile.exists()) AtomicFile(checkpointFile).readFully().decodeToString() else null
+    fun loadCheckpoint(): RideCheckpoint? = try {
+        if (checkpointFile.exists()) CheckpointJson.decode(AtomicFile(checkpointFile).readFully().decodeToString()) else null
     } catch (e: Exception) {
         null
     }

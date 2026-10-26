@@ -1,43 +1,13 @@
-package app.peloskin.store
+package app.peloskin.data.store
 
-import app.peloskin.ride.FtpSource
-import app.peloskin.ride.RideSummary
+import app.peloskin.domain.CompactEdge
+import app.peloskin.domain.CompactMetric
+import app.peloskin.domain.FtpSource
+import app.peloskin.domain.RideSummary
+import app.peloskin.domain.Settings
+import app.peloskin.domain.SkinMode
 import org.json.JSONArray
 import org.json.JSONObject
-
-enum class SkinMode { Full, Compact }
-enum class CompactEdge { Top, Bottom }
-
-enum class CompactMetric(val label: String) {
-    Cadence("Cadence"),
-    Output("Output"),
-    Resistance("Resistance"),
-    Speed("Speed"),
-    Distance("Distance"),
-    TotalOutput("Total"),
-    Calories("Calories"),
-    HeartRate("Heart rate"),
-}
-
-data class Settings(
-    val ftp: Int? = null,
-    val ftpSource: FtpSource = FtpSource.Manual,
-    val ftpSetAt: Long = 0L,
-    val autoFtp: Boolean = true,
-    val startMode: SkinMode = SkinMode.Full,
-    val compactEdge: CompactEdge = CompactEdge.Bottom,
-    val compactMetrics: List<CompactMetric> = DefaultCompactMetrics,
-    val startOnBoot: Boolean = true,
-    val rides: List<RideSummary> = emptyList(),
-) {
-    companion object {
-        val DefaultCompactMetrics = listOf(
-            CompactMetric.Cadence, CompactMetric.Output, CompactMetric.Resistance,
-            CompactMetric.Speed, CompactMetric.TotalOutput,
-        )
-        const val MaxRides = 100
-    }
-}
 
 /** JSON form, used for both the app's own storage and the backup file. */
 object SettingsJson {

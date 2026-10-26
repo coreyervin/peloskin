@@ -1,81 +1,47 @@
 package app.peloskin
 
-import app.peloskin.feed.BikeSample
-import app.peloskin.feed.DirCon
-import app.peloskin.feed.HeartRateParser
-import app.peloskin.feed.IndoorBikeDataParser
-import app.peloskin.ride.Ftp
-import app.peloskin.ride.FtpSource
-import app.peloskin.ride.PowerZones
-import app.peloskin.ride.RideSummary
-import app.peloskin.ride.RideTracker
-import app.peloskin.store.CompactEdge
-import app.peloskin.store.CompactMetric
-import app.peloskin.store.Settings
-import app.peloskin.store.SettingsJson
-import app.peloskin.store.SkinMode
+import app.peloskin.data.store.CheckpointJson
+import app.peloskin.data.store.SettingsJson
+import app.peloskin.domain.BikeMath
+import app.peloskin.domain.BikeSample
+import app.peloskin.domain.CompactEdge
+import app.peloskin.domain.CompactMetric
+import app.peloskin.domain.Ftp
+import app.peloskin.domain.FtpSource
+import app.peloskin.domain.PowerZones
+import app.peloskin.domain.RideSummary
+import app.peloskin.domain.RideTracker
+import app.peloskin.domain.Settings
+import app.peloskin.domain.SkinMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 class PeloSkinTest {
 
-    /** Same layout Grupetto sends: speed, cadence, resistance, power. */
-    private fun grupettoBikeData(cadence: Float, power: Int, speedMph: Float, resistance: Int): ByteArray {
-        val flags = 0x0004 or 0x0020 or 0x0040
-        return ByteBuffer.allocate(10).order(ByteOrder.LITTLE_ENDIAN)
-            .putShort(flags.toShort())
-            .putShort((speedMph * 1.60934f * 100).toInt().toShort())
-            .putShort((cadence * 2).toInt().toShort())
-            .putShort(resistance.toShort())
-            .putShort(power.toShort())
-            .array()
+    @Test fun powerOnlyCountsWhilePedaling() {
+        // The flywheel sensor can report spikes while the cranks are still.
+        assertEquals(0f, BikeMath.sample(850f, 0f, 30f).power, 0f)
+        assertEquals(150f, BikeMath.sample(150f, 80f, 30f).power, 0f)
+        assertEquals(2500f, BikeMath.sample(90_000f, 80f, 30f).power, 0f)
+        assertEquals(0f, BikeMath.sample(Float.NaN, 80f, 30f).power, 0f)
     }
 
-    @Test fun parsesGrupettoIndoorBikeData() {
-        val s = IndoorBikeDataParser.parse(grupettoBikeData(84f, 232, 22.7f, 51))!!
-        assertEquals(84f, s.cadence!!, 0.01f)
-        assertEquals(232f, s.power!!, 0.01f)
-        assertEquals(51f, s.resistance!!, 0.01f)
-        assertEquals(22.7f, s.speedMph!!, 0.05f)
+    @Test fun resistanceIsClampedToPercent() {
+        assertEquals(100f, BikeMath.sample(100f, 80f, 140f).resistance, 0f)
+        assertEquals(0f, BikeMath.sample(100f, 80f, -3f).resistance, 0f)
     }
 
-    @Test fun rejectsTruncatedBikeData() {
-        assertNull(IndoorBikeDataParser.parse(grupettoBikeData(84f, 232, 22.7f, 51).copyOf(7)))
-    }
-
-    @Test fun parsesHeartRate() {
-        assertEquals(131, HeartRateParser.parse(byteArrayOf(0, 131.toByte())))
-        assertEquals(300, HeartRateParser.parse(byteArrayOf(1, 0x2C, 0x01)))
-    }
-
-    @Test fun dirConReaderHandlesSplitFrames() {
-        val payload = ByteBuffer.allocate(16 + 10)
-            .putLong(DirCon.IndoorBikeData.mostSignificantBits)
-            .putLong(DirCon.IndoorBikeData.leastSignificantBits)
-            .put(grupettoBikeData(90f, 200, 20f, 40))
-            .array()
-        val frame = byteArrayOf(1, 0x06, 0, 0, 0, payload.size.toByte()) + payload
-        val two = frame + frame
-        val reader = DirCon.Reader()
-        val first = reader.feed(two.copyOfRange(0, 20), 20)
-        val rest = reader.feed(two.copyOfRange(20, two.size), two.size - 20)
-        assertEquals(0, first.size)
-        assertEquals(2, rest.size)
-        assertEquals(DirCon.IndoorBikeData, rest[1].uuid)
-        assertEquals(200f, IndoorBikeDataParser.parse(rest[1].data)!!.power!!, 0.01f)
-    }
-
-    @Test fun enableNotificationsFrame() {
-        val f = DirCon.enableNotifications(DirCon.IndoorBikeData, 3)
-        assertEquals(6 + 17, f.size)
-        assertEquals(0x05, f[1].toInt())
-        assertEquals(17, f[5].toInt())
-        assertEquals(1, f.last().toInt())
+    @Test fun speedFollowsPelotonCurve() {
+        assertEquals(0f, BikeMath.speedFromPower(0f), 0f)
+        // Reference points from the PeloMon fit.
+        assertEquals(7.40f, BikeMath.speedFromPower(20f), 0.05f)
+        assertEquals(19.08f, BikeMath.speedFromPower(150f), 0.05f)
+        assertEquals(22.46f, BikeMath.speedFromPower(232f), 0.05f)
+        // Faster with more power.
+        assertTrue(BikeMath.speedFromPower(300f) > BikeMath.speedFromPower(200f))
     }
 
     @Test fun steadyRideTotalsAndFtp() {
@@ -160,7 +126,8 @@ class PeloSkinTest {
         val a = RideTracker()
         var sec = 0
         repeat(1300) { a.onSample(sec++ * 1000L, BikeSample(210f, 90f, 40f, 20f)) }
-        val saved = a.checkpoint(sec * 1000L)!!
+        // Through JSON, the way it's stored on the tablet.
+        val saved = CheckpointJson.decode(CheckpointJson.encode(a.checkpoint(sec * 1000L)!!))!!
 
         val b = RideTracker()
         assertTrue(b.resume(saved, sec * 1000L + 5_000))
@@ -180,7 +147,7 @@ class PeloSkinTest {
         assertEquals(false, RideTracker().resume(saved, 30_000L))
         // Too long since the last pedal stroke.
         assertEquals(false, RideTracker().resume(saved, 60_000L + 6 * 60_000L))
-        assertEquals(false, RideTracker().resume("not json", 60_000L))
+        assertNull(CheckpointJson.decode("not json"))
         assertNull(RideTracker().checkpoint(0L))
     }
 
@@ -210,7 +177,7 @@ class PeloSkinTest {
         val s = Settings(
             ftp = 243, ftpSource = FtpSource.Ride, ftpSetAt = 1234L, autoFtp = false,
             startMode = SkinMode.Compact, compactEdge = CompactEdge.Top,
-            compactMetrics = listOf(CompactMetric.Output, CompactMetric.HeartRate),
+            compactMetrics = listOf(CompactMetric.Output, CompactMetric.Calories),
             startOnBoot = false,
             rides = listOf(RideSummary(5L, 1800, 180, 320, 256), RideSummary(6L, 600, 120, 70, null)),
         )
@@ -220,16 +187,6 @@ class PeloSkinTest {
     @Test fun zeroFtpInBackupIsIgnored() {
         assertNull(SettingsJson.decode("""{"ftp":0}""").ftp)
         assertNull(SettingsJson.decode("""{"ftp":-5}""").ftp)
-    }
-
-    @Test fun dirConErrorAndShortFrames() {
-        val error = byteArrayOf(1, 0x05, 2, 0x04, 0, 0)           // "characteristic not found", no payload
-        val short = byteArrayOf(1, 0x06, 0, 0, 0, 3, 9, 9, 9)     // payload too short to hold a UUID
-        val frames = DirCon.Reader().let { it.feed(error + short, error.size + short.size) }
-        assertEquals(2, frames.size)
-        assertEquals(0x04, frames[0].response)
-        assertNull(frames[0].uuid)
-        assertNull(frames[1].uuid)
     }
 
     @Test fun oldOrPartialBackupUsesDefaults() {

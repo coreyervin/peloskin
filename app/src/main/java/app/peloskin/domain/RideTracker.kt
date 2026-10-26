@@ -1,8 +1,5 @@
-package app.peloskin.ride
+package app.peloskin.domain
 
-import app.peloskin.feed.BikeSample
-import org.json.JSONArray
-import org.json.JSONObject
 
 /** What the skin draws, recomputed on every sample. */
 data class RideSnapshot(
@@ -24,6 +21,16 @@ data class RideSnapshot(
     val elapsedSec: Int = 0,
     /** Best 20-minute average power so far, once the ride is 20 minutes long. */
     val best20Watts: Float? = null,
+)
+
+/** Everything [RideTracker] needs to pick a ride back up. */
+class RideCheckpoint(
+    val savedAt: Long, val startedAt: Long, val lastPedalAt: Long,
+    val elapsed: Double, val elapsedAtLastPedal: Double, val moving: Double,
+    val powerSum: Double, val cadenceSum: Double, val resistanceSum: Double,
+    val energyJ: Double, val distanceMi: Double,
+    val bestPower: Float, val bestCadence: Float, val bestResistance: Float,
+    val seconds: Int, val best20: Double?, val ring: DoubleArray,
 )
 
 data class RideSummary(
@@ -67,15 +74,15 @@ class RideTracker(
 
     // Cumulative energy at each whole second, in a ring big enough for one 20-minute
     // window, so a long ride doesn't keep growing memory.
-    private val ring = DoubleArray(Window + 1)
+    private val ring = DoubleArray(RingSize)
     private var seconds = 0
     private var best20: Double? = null
 
     fun onSample(now: Long, sample: BikeSample) {
-        val power = (sample.power ?: 0f).coerceAtLeast(0f)
-        val cadence = (sample.cadence ?: 0f).coerceAtLeast(0f)
-        val resistance = sample.resistance ?: snapshot.resistance
-        val speed = (sample.speedMph ?: 0f).coerceAtLeast(0f)
+        val power = sample.power.coerceAtLeast(0f)
+        val cadence = sample.cadence.coerceAtLeast(0f)
+        val resistance = sample.resistance
+        val speed = sample.speedMph.coerceAtLeast(0f)
         val pedaling = cadence > 0f
 
         if (snapshot.riding) checkIdle(now)
@@ -175,69 +182,53 @@ class RideTracker(
     // ------------------------------------------------------------- checkpoint
 
     /**
-     * Ride state as JSON, so a ride survives Android killing and restarting the service.
+     * Ride state, so a ride survives Android killing and restarting the service.
      * `now` is the monotonic clock; it is used to reject a checkpoint from before a reboot.
      */
-    fun checkpoint(now: Long): String? {
+    fun checkpoint(now: Long): RideCheckpoint? {
         if (!snapshot.riding) return null
-        return JSONObject().apply {
-            put("savedAt", now)
-            put("startedAt", startedAt)
-            put("lastSampleAt", lastSampleAt)
-            put("lastPedalAt", lastPedalAt)
-            put("elapsed", elapsed); put("elapsedAtLastPedal", elapsedAtLastPedal); put("moving", moving)
-            put("powerSum", powerSum); put("cadenceSum", cadenceSum); put("resistanceSum", resistanceSum)
-            put("energyJ", energyJ); put("distanceMi", distanceMi)
-            put("bestPower", bestPower.toDouble()); put("bestCadence", bestCadence.toDouble())
-            put("bestResistance", bestResistance.toDouble())
-            put("seconds", seconds)
-            best20?.let { put("best20", it) }
-            put("ring", JSONArray(ring.toList()))
-        }.toString()
+        return RideCheckpoint(
+            savedAt = now, startedAt = startedAt, lastPedalAt = lastPedalAt,
+            elapsed = elapsed, elapsedAtLastPedal = elapsedAtLastPedal, moving = moving,
+            powerSum = powerSum, cadenceSum = cadenceSum, resistanceSum = resistanceSum,
+            energyJ = energyJ, distanceMi = distanceMi,
+            bestPower = bestPower, bestCadence = bestCadence, bestResistance = bestResistance,
+            seconds = seconds, best20 = best20, ring = ring.copyOf(),
+        )
     }
 
     /** @return true if the saved ride was still in progress and has been resumed. */
-    fun resume(json: String, now: Long): Boolean = try {
-        val o = JSONObject(json)
-        val savedAt = o.getLong("savedAt")
-        val pedalAt = o.getLong("lastPedalAt")
+    fun resume(c: RideCheckpoint, now: Long): Boolean {
         // A monotonic time in the future means the tablet rebooted since the save.
-        if (savedAt > now || now - pedalAt >= idleEndMs) {
-            false
-        } else {
-            startedAt = o.getLong("startedAt")
-            lastSampleAt = NoSample
-            lastPedalAt = pedalAt
-            elapsed = o.getDouble("elapsed"); elapsedAtLastPedal = o.getDouble("elapsedAtLastPedal")
-            moving = o.getDouble("moving")
-            powerSum = o.getDouble("powerSum"); cadenceSum = o.getDouble("cadenceSum")
-            resistanceSum = o.getDouble("resistanceSum")
-            energyJ = o.getDouble("energyJ"); distanceMi = o.getDouble("distanceMi")
-            bestPower = o.getDouble("bestPower").toFloat(); bestCadence = o.getDouble("bestCadence").toFloat()
-            bestResistance = o.getDouble("bestResistance").toFloat()
-            seconds = o.getInt("seconds")
-            best20 = if (o.has("best20")) o.getDouble("best20") else null
-            val saved = o.getJSONArray("ring")
-            for (i in ring.indices) ring[i] = saved.optDouble(i, 0.0)
-            snapshot = RideSnapshot(
-                riding = true,
-                avgPower = avg(powerSum), avgCadence = avg(cadenceSum), avgResistance = avg(resistanceSum),
-                bestPower = bestPower, bestCadence = bestCadence, bestResistance = bestResistance,
-                totalKj = (energyJ / 1000).toFloat(), distanceMi = distanceMi.toFloat(),
-                calories = (energyJ / JoulesPerKcal / Efficiency).toFloat(),
-                elapsedSec = elapsedAtLastPedal.toInt(), best20Watts = best20?.toFloat(),
-            )
-            true
-        }
-    } catch (_: Exception) {
-        false
+        if (c.savedAt > now || now - c.lastPedalAt >= idleEndMs || c.ring.size != ring.size) return false
+        startedAt = c.startedAt
+        lastSampleAt = NoSample
+        lastPedalAt = c.lastPedalAt
+        elapsed = c.elapsed; elapsedAtLastPedal = c.elapsedAtLastPedal; moving = c.moving
+        powerSum = c.powerSum; cadenceSum = c.cadenceSum; resistanceSum = c.resistanceSum
+        energyJ = c.energyJ; distanceMi = c.distanceMi
+        bestPower = c.bestPower; bestCadence = c.bestCadence; bestResistance = c.bestResistance
+        seconds = c.seconds
+        best20 = c.best20
+        c.ring.copyInto(ring)
+        snapshot = RideSnapshot(
+            riding = true,
+            avgPower = avg(powerSum), avgCadence = avg(cadenceSum), avgResistance = avg(resistanceSum),
+            bestPower = bestPower, bestCadence = bestCadence, bestResistance = bestResistance,
+            totalKj = (energyJ / 1000).toFloat(), distanceMi = distanceMi.toFloat(),
+            calories = (energyJ / JoulesPerKcal / Efficiency).toFloat(),
+            elapsedSec = elapsedAtLastPedal.toInt(), best20Watts = best20?.toFloat(),
+        )
+        return true
     }
 
-    private companion object {
-        const val Window = 20 * 60
-        const val NoSample = Long.MIN_VALUE
-        // Same estimate Grupetto uses: mechanical work over ~22% body efficiency.
-        const val JoulesPerKcal = 4184.0
-        const val Efficiency = 0.22
+    companion object {
+        /** Length of the rolling window for best 20 minutes, plus one, in seconds. */
+        const val RingSize = 20 * 60 + 1
+        private const val Window = 20 * 60
+        private const val NoSample = Long.MIN_VALUE
+        // Standard estimate: mechanical work over ~22% body efficiency.
+        private const val JoulesPerKcal = 4184.0
+        private const val Efficiency = 0.22
     }
 }

@@ -1,4 +1,4 @@
-package app.peloskin.ride
+package app.peloskin.domain
 
 import kotlin.math.roundToInt
 

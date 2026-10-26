@@ -2,8 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Grupetto's feed is a TCP socket on this tablet. -->
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Peloton's sensor software on the tablet. -->
+    <uses-permission android:name="onepeloton.permission.ACCESS_SENSOR_SERVICE" />
+    <queries>
+        <package android:name="com.onepeloton.affernetservice" />
+        <package android:name="com.peloton.service.SensorData" />
+    </queries>
+
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -23,7 +28,7 @@
         android:theme="@android:style/Theme.Material.NoActionBar">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.settings.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -32,7 +37,7 @@
         </activity>
 
         <service
-            android:name=".overlay.SkinService"
+            android:name=".ui.overlay.SkinService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
