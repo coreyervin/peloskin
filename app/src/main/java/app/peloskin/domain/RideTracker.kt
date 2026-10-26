@@ -25,6 +25,8 @@ data class RideSnapshot(
 
 /** Everything [RideTracker] needs to pick a ride back up. */
 class RideCheckpoint(
+    /** Which boot of the tablet this was saved in. */
+    val bootId: Int,
     val savedAt: Long, val startedAt: Long, val lastPedalAt: Long,
     val elapsed: Double, val elapsedAtLastPedal: Double, val moving: Double,
     val powerSum: Double, val cadenceSum: Double, val resistanceSum: Double,
@@ -42,8 +44,9 @@ data class RideSummary(
 )
 
 /**
- * Turns the 1 Hz feed into ride totals. A ride starts when you pedal and ends after
- * [idleEndMs] without pedaling; the numbers stay on screen until the next ride starts.
+ * Turns the bike's readings into ride totals. A ride starts when you pedal and ends after
+ * [idleEndMs] without pedaling, or when [finish] is called; the numbers stay on screen until
+ * the next ride starts.
  *
  * `now` values passed in must come from a monotonic clock (SystemClock.elapsedRealtime);
  * [wallClock] is only used to timestamp the ride for history.
@@ -148,21 +151,24 @@ class RideTracker(
     }
 
     private fun checkIdle(now: Long) {
-        if (now - lastPedalAt < idleEndMs) return
+        if (now - lastPedalAt >= idleEndMs) finish()
+    }
+
+    /** Ends the ride now, recording it if it's long enough (for example, when the skin is stopped). */
+    fun finish() {
+        if (!snapshot.riding) return
         snapshot = snapshot.copy(riding = false)
         // Only time spent pedaling counts, so a bump of the pedals is never a ride.
-        if (moving >= minRideSec) {
-            onRideFinished(
-                RideSummary(
-                    startedAt = startedAt,
-                    durationSec = elapsedAtLastPedal.toInt(),
-                    avgPower = snapshot.avgPower.toInt(),
-                    totalKj = snapshot.totalKj.toInt(),
-                    best20Watts = best20?.toInt(),
-                )
-            )
-        }
+        if (moving >= minRideSec) onRideFinished(summary())
     }
+
+    private fun summary() = RideSummary(
+        startedAt = startedAt,
+        durationSec = elapsedAtLastPedal.toInt(),
+        avgPower = avg(powerSum).toInt(),
+        totalKj = (energyJ / 1000).toInt(),
+        best20Watts = best20?.toInt(),
+    )
 
     private fun begin(now: Long) {
         startedAt = wallClock()
@@ -183,12 +189,13 @@ class RideTracker(
 
     /**
      * Ride state, so a ride survives Android killing and restarting the service.
-     * `now` is the monotonic clock; it is used to reject a checkpoint from before a reboot.
+     * `now` is the monotonic clock and [bootId] identifies the current boot; together they
+     * let [resume] reject a checkpoint from before a reboot.
      */
-    fun checkpoint(now: Long): RideCheckpoint? {
+    fun checkpoint(now: Long, bootId: Int): RideCheckpoint? {
         if (!snapshot.riding) return null
         return RideCheckpoint(
-            savedAt = now, startedAt = startedAt, lastPedalAt = lastPedalAt,
+            bootId = bootId, savedAt = now, startedAt = startedAt, lastPedalAt = lastPedalAt,
             elapsed = elapsed, elapsedAtLastPedal = elapsedAtLastPedal, moving = moving,
             powerSum = powerSum, cadenceSum = cadenceSum, resistanceSum = resistanceSum,
             energyJ = energyJ, distanceMi = distanceMi,
@@ -197,10 +204,13 @@ class RideTracker(
         )
     }
 
-    /** @return true if the saved ride was still in progress and has been resumed. */
-    fun resume(c: RideCheckpoint, now: Long): Boolean {
-        // A monotonic time in the future means the tablet rebooted since the save.
-        if (c.savedAt > now || now - c.lastPedalAt >= idleEndMs || c.ring.size != ring.size) return false
+    /**
+     * @return true if the saved ride was still in progress and has been resumed. If not,
+     * record [summaryOf] the checkpoint instead, so the ride isn't lost.
+     */
+    fun resume(c: RideCheckpoint, now: Long, bootId: Int): Boolean {
+        val sameBoot = c.bootId == bootId && c.savedAt <= now
+        if (!sameBoot || now - c.lastPedalAt >= idleEndMs || c.ring.size != ring.size) return false
         startedAt = c.startedAt
         lastSampleAt = NoSample
         lastPedalAt = c.lastPedalAt
@@ -225,6 +235,18 @@ class RideTracker(
     companion object {
         /** Length of the rolling window for best 20 minutes, plus one, in seconds. */
         const val RingSize = 20 * 60 + 1
+
+        /** The finished ride a checkpoint describes, or null if it's too short to keep. */
+        fun summaryOf(c: RideCheckpoint, minRideSec: Int = 5 * 60): RideSummary? {
+            if (c.moving < minRideSec) return null
+            return RideSummary(
+                startedAt = c.startedAt,
+                durationSec = c.elapsedAtLastPedal.toInt(),
+                avgPower = (c.powerSum / c.moving).toInt(),
+                totalKj = (c.energyJ / 1000).toInt(),
+                best20Watts = c.best20?.toInt(),
+            )
+        }
         private const val Window = 20 * 60
         private const val NoSample = Long.MIN_VALUE
         // Standard estimate: mechanical work over ~22% body efficiency.

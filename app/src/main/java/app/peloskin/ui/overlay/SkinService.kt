@@ -42,6 +42,7 @@ import app.peloskin.domain.SkinMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -82,7 +83,10 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
 
     private lateinit var feed: BikeFeed
     private val ride = MutableStateFlow(RideSnapshot())
-    private val tracker = RideTracker(onRideFinished = { SettingsStore.recordRide(it) })
+    private val tracker = RideTracker(onRideFinished = { ride ->
+        // Demo rides are made up, so they stay out of history and never set FTP.
+        if (!(::feed.isInitialized && feed.demoActive.value)) SettingsStore.recordRide(ride)
+    })
     private val mode = MutableStateFlow(SkinMode.Full)
 
     override fun onCreate() {
@@ -100,9 +104,15 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         _running.value = true
 
         mode.value = SettingsStore.settings.value.startMode
-        // If Android killed and restarted the service mid-ride, pick the ride back up.
+        // If Android killed and restarted the service mid-ride, pick the ride back up. If too
+        // much time has passed or the tablet rebooted, save it as a finished ride instead.
         SettingsStore.loadCheckpoint()?.let { saved ->
-            if (tracker.resume(saved, SystemClock.elapsedRealtime())) ride.value = tracker.snapshot
+            if (tracker.resume(saved, SystemClock.elapsedRealtime(), bootId())) {
+                ride.value = tracker.snapshot
+            } else {
+                RideTracker.summaryOf(saved)?.let { SettingsStore.recordRide(it) }
+                SettingsStore.saveCheckpoint(null)
+            }
         }
         feed = BikeFeed(BikeModel.detect(this).sources(this), demo = { SettingsStore.demoRide.value })
         feed.start(lifecycleScope)
@@ -110,18 +120,25 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         lifecycleScope.launch { feed.source.collect { _feedSource.value = it } }
         // The bike reports several times a second. Every reading goes into the ride totals,
         // but the screen redraws 4 times a second showing the average since the last redraw.
+        // Resistance is a knob setting, so it shows the latest reading rather than an average.
         val window = DisplayWindow()
+        var lastSampleAt = 0L
         lifecycleScope.launch {
             feed.samples.collect {
-                tracker.onSample(SystemClock.elapsedRealtime(), it)
+                lastSampleAt = SystemClock.elapsedRealtime()
+                tracker.onSample(lastSampleAt, it)
                 window.add(it)
             }
         }
         lifecycleScope.launch {
             while (true) {
                 delay(250)
-                window.drain()?.let { avg ->
+                val avg = window.drain()
+                if (avg != null) {
                     ride.value = tracker.snapshot.copy(power = avg.power, cadence = avg.cadence, speedMph = avg.speedMph)
+                } else if (SystemClock.elapsedRealtime() - lastSampleAt > 2_500 && ride.value.power + ride.value.cadence > 0f) {
+                    // No readings for a while: don't leave the last watts and rpm on screen.
+                    ride.value = ride.value.copy(power = 0f, cadence = 0f, speedMph = 0f)
                 }
             }
         }
@@ -137,7 +154,8 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         lifecycleScope.launch {
-            SettingsStore.ftpBanner.collect {
+            // A newer banner restarts the 15 seconds.
+            SettingsStore.ftpBanner.collectLatest {
                 if (it != null) { delay(15_000); SettingsStore.clearBanner() }
             }
         }
@@ -149,10 +167,17 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
-    private fun saveCheckpoint(now: Long) = SettingsStore.saveCheckpoint(tracker.checkpoint(now))
+    private fun saveCheckpoint(now: Long) = SettingsStore.saveCheckpoint(tracker.checkpoint(now, bootId()))
+
+    /** Changes every time the tablet boots, so a checkpoint from an earlier boot is spotted. */
+    private fun bootId() = Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
 
     override fun onDestroy() {
-        if (_running.value) saveCheckpoint(SystemClock.elapsedRealtime())
+        if (_running.value) {
+            // Stopping the skin ends the ride, so it's saved now rather than lost.
+            tracker.finish()
+            SettingsStore.saveCheckpoint(null)
+        }
         removeWindows()
         if (::feed.isInitialized) feed.stop()
         _running.value = false
@@ -292,6 +317,8 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
 
 /** Averages readings between screen redraws. Readings arrive on the main thread. */
 private class DisplayWindow {
+    class Average(val power: Float, val cadence: Float, val speedMph: Float)
+
     private var power = 0f
     private var cadence = 0f
     private var speed = 0f
@@ -301,9 +328,9 @@ private class DisplayWindow {
         power += sample.power; cadence += sample.cadence; speed += sample.speedMph; count++
     }
 
-    fun drain(): BikeSample? {
+    fun drain(): Average? {
         if (count == 0) return null
-        val avg = BikeSample(power / count, cadence / count, 0f, speed / count)
+        val avg = Average(power / count, cadence / count, speed / count)
         power = 0f; cadence = 0f; speed = 0f; count = 0
         return avg
     }

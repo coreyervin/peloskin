@@ -44,3 +44,21 @@ object BikeMath {
         return mph.coerceAtLeast(0f)
     }
 }
+
+/**
+ * The resistance sensor occasionally reports a single wild reading. A median of the last three
+ * readings drops those, while a real turn of the knob comes through one reading later.
+ */
+class ResistanceFilter {
+    private val recent = FloatArray(3)
+    private var count = 0
+
+    fun clean(sample: BikeSample): BikeSample {
+        recent[count % recent.size] = sample.resistance
+        count++
+        if (count < recent.size) return sample
+        val (a, b, c) = recent
+        val median = maxOf(minOf(a, b), minOf(maxOf(a, b), c))
+        return sample.copy(resistance = median)
+    }
+}

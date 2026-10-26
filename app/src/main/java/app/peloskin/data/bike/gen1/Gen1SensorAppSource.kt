@@ -8,11 +8,11 @@ import android.os.HandlerThread
 import android.os.Message
 import android.os.Messenger
 import android.util.Log
-import app.peloskin.domain.BikeMath
-import app.peloskin.domain.BikeSample
 import app.peloskin.data.bike.SensorSource
 import app.peloskin.data.bike.ServiceBinding
 import app.peloskin.data.bike.Tag
+import app.peloskin.domain.BikeMath
+import app.peloskin.domain.BikeSample
 
 /**
  * Gen 1: Peloton's older sensor app (`com.peloton.service.SensorData`). We ask it for repeating
@@ -30,27 +30,35 @@ class Gen1SensorAppSource(private val context: Context) : SensorSource {
         var power = 0f
         var cadence = 0f
         var resistance = 0f
-        val handler = object : Handler(t.looper) {
+        // One reply handler per request, so a reply is matched to its metric by which
+        // handler got it, not by the reply's own fields.
+        fun replies(what: Int) = Messenger(object : Handler(t.looper) {
+            private var latest = 0L
+
             override fun handleMessage(msg: Message) {
                 val reply = msg.data ?: return
                 if (msg.what < 0 || reply.getString(KeyRaw) == TimedOut || !reply.containsKey(KeyValue)) return
+                // Replies can arrive out of order; skip any older than one we've used.
+                val time = reply.getLong(KeyTime)
+                if (time < latest) return
+                latest = time
                 val value = reply.getFloat(KeyValue)
-                when (msg.what) {
+                when (what) {
                     GetCadence -> cadence = value
                     GetResistance -> resistance = value
-                    // Power is the last of the three to change, so publish on it.
+                    // Publish on each power reading, with the latest cadence and resistance.
                     GetPower -> { power = value / 100f; onSample(BikeMath.sample(power, cadence, resistance)) }
                 }
             }
-        }
-        val replyTo = Messenger(handler)
+        })
+        val requests = listOf(GetCadence, GetPower, GetResistance).associateWith(::replies)
         val b = ServiceBinding(
             context,
             Intent(Action).setPackage(Package),
             onConnected = { binder ->
                 try {
                     val messenger = Messenger(binder)
-                    for (what in listOf(GetCadence, GetPower, GetResistance)) {
+                    for ((what, replyTo) in requests) {
                         messenger.send(Message.obtain().apply {
                             this.what = what
                             data = Bundle().apply { putString(KeyRequestId, "peloskin-$what") }
@@ -83,6 +91,7 @@ class Gen1SensorAppSource(private val context: Context) : SensorSource {
         const val GetResistance = 3
         const val KeyRequestId = "requestId"
         const val KeyValue = "data"
+        const val KeyTime = "time"
         const val KeyRaw = "responseHexString"
         const val TimedOut = "TIME_OUT"
     }

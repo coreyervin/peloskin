@@ -61,12 +61,13 @@ private val Up = Color(0xFF3FD28B)
 private val Down = Color(0xFFFF4A55)
 private val ZoneOn = Color(0xFF41C7C7)
 private val ZoneOff = Color(0xFF3A3E46)
+private val Gold = Color(0xFFE6B422)
 
 /**
  * Everything is sized in "u", 1% of the screen width, so the skin keeps the
  * mockup's proportions whatever the tablet's density.
  */
-class Scale(private val u: Dp, private val density: Float, private val fontScale: Float) {
+class Scale(private val u: Dp, private val fontScale: Float) {
     fun dp(x: Float): Dp = u * x
     fun sp(x: Float): TextUnit = TextUnit((u.value * x) / fontScale, androidx.compose.ui.unit.TextUnitType.Sp)
 }
@@ -75,7 +76,7 @@ class Scale(private val u: Dp, private val density: Float, private val fontScale
 fun rememberScale(): Scale {
     val width = LocalConfiguration.current.screenWidthDp
     val d = LocalDensity.current
-    return remember(width, d) { Scale((width / 100f).dp, d.density, d.fontScale) }
+    return remember(width, d) { Scale((width / 100f).dp, d.fontScale) }
 }
 
 data class SkinState(
@@ -187,7 +188,7 @@ private fun StatusLine(state: SkinState, s: Scale) {
     } ?: return
     Text(
         text,
-        color = if (state.ftpBanner != null) Color(0xFFE6B422) else Dim,
+        color = if (state.ftpBanner != null) Gold else Dim,
         modifier = Modifier.padding(bottom = s.dp(0.8f)),
         style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = s.sp(0.9f)),
     )
@@ -320,6 +321,13 @@ fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, onToggle: () -> 
                 style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = s.sp(0.9f)),
             )
         } else {
+            state.ftpBanner?.let { ftp ->
+                Text(
+                    "NEW FTP $ftp", color = Gold, modifier = Modifier.padding(horizontal = s.dp(1.1f)),
+                    style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = s.sp(0.8f), letterSpacing = 0.1.em),
+                )
+                Box(Modifier.width(1.dp).height(s.dp(1.6f)).background(Color(0x2EFFFFFF)))
+            }
             metrics.forEachIndexed { i, m ->
                 if (i > 0) Box(Modifier.width(1.dp).height(s.dp(1.6f)).background(Color(0x2EFFFFFF)))
                 when (m) {

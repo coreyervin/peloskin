@@ -29,12 +29,19 @@
 
         <activity
             android:name=".ui.settings.MainActivity"
-            android:exported="true">
+            android:exported="false" />
+
+        <!-- The launcher entry keeps its original name, so home-screen shortcuts made with
+             earlier versions keep working. -->
+        <activity-alias
+            android:name=".MainActivity"
+            android:exported="true"
+            android:targetActivity=".ui.settings.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
         <service
             android:name=".ui.overlay.SkinService"

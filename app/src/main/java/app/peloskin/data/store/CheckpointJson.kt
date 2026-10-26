@@ -7,6 +7,7 @@ import org.json.JSONObject
 /** JSON form of an in-progress ride, kept in the app's own storage. */
 object CheckpointJson {
     fun encode(c: RideCheckpoint): String = JSONObject().apply {
+        put("bootId", c.bootId)
         put("savedAt", c.savedAt)
         put("startedAt", c.startedAt)
         put("lastPedalAt", c.lastPedalAt)
@@ -31,6 +32,7 @@ object CheckpointJson {
         val o = JSONObject(text)
         val ring = o.getJSONArray("ring")
         RideCheckpoint(
+            bootId = o.optInt("bootId", -1),
             savedAt = o.getLong("savedAt"),
             startedAt = o.getLong("startedAt"),
             lastPedalAt = o.getLong("lastPedalAt"),

@@ -13,6 +13,7 @@ import app.peloskin.domain.RideCheckpoint
 import app.peloskin.domain.RideSummary
 import app.peloskin.domain.Settings
 import java.io.File
+import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -38,7 +39,7 @@ object SettingsStore {
 
     fun setDemoRide(on: Boolean) {
         _demoRide.value = on
-        appContext.getSharedPreferences("peloskin", Context.MODE_PRIVATE).edit().putBoolean("demoRide", on).apply()
+        prefs.edit().putBoolean("demoRide", on).apply()
     }
 
     /** Set when a ride raises the FTP, so the skin can show a short banner. */
@@ -47,9 +48,18 @@ object SettingsStore {
 
     /**
      * False until the backup file has been read, or confirmed missing. Until then we never
-     * write it, so a fresh install that can't see the backup yet can't overwrite it with defaults.
+     * write it, so an install that can't see the backup yet can't overwrite it. Saved, so it
+     * survives the app restarting before file access is granted.
      */
-    private var backupChecked = false
+    @Volatile private var backupChecked = false
+
+    /** Whether there are local settings worth keeping when a backup turns up. */
+    private var haveLocal = false
+
+    /** File writes happen here, one at a time, so the overlay never waits on storage. */
+    private val io = Executors.newSingleThreadExecutor()
+
+    private val prefs get() = appContext.getSharedPreferences("peloskin", Context.MODE_PRIVATE)
 
     val backupFile: File
         get() = File(
@@ -70,50 +80,64 @@ object SettingsStore {
         appContext = context.applicationContext
         appFile = File(context.filesDir, "settings.json")
         checkpointFile = File(context.filesDir, "ride-checkpoint.json")
-        _demoRide.value = appContext.getSharedPreferences("peloskin", Context.MODE_PRIVATE).getBoolean("demoRide", false)
+        _demoRide.value = prefs.getBoolean("demoRide", false)
+        backupChecked = prefs.getBoolean("backupChecked", false)
         val local = read(appFile)
-        if (local != null) {
-            // The app's own copy is the source of truth; the backup only mirrors it.
-            _settings.value = local
-            backupChecked = true
-        } else {
-            checkBackup()
-        }
+        haveLocal = local != null
+        _settings.value = local ?: Settings()
+        checkBackup()
     }
 
     /**
-     * Fresh install or lost app data: adopt the backup once we're allowed to read it.
-     * Call again when file access might have just been granted.
+     * Picks up the backup once we're allowed to read it, merging it with anything set here.
+     * Safe to call often; it only does work once. Call it when file access may have been granted.
      */
-    @Synchronized
     fun checkBackup() {
+        if (backupChecked) return
+        io.execute { checkBackupNow() }
+    }
+
+    private fun checkBackupNow() {
         if (backupChecked || !canUseBackup()) return
         val file = backupFile
-        when {
-            !file.exists() -> Unit
-            else -> {
-                val restored = read(file)
-                if (restored != null) {
-                    Log.i(Tag, "Restored settings from backup")
-                    _settings.value = restored
-                    write(appFile, restored)
-                } else {
-                    // Keep an unreadable backup aside instead of overwriting it.
-                    val aside = File(file.parentFile, "peloskin-backup.unreadable-${System.currentTimeMillis()}.json")
-                    file.renameTo(aside)
-                    Log.w(Tag, "Backup unreadable, kept as ${aside.name}")
+        if (file.exists()) {
+            val found = read(file)
+            if (found != null) {
+                val merged = synchronized(this) {
+                    SettingsMerge.merge(if (haveLocal) _settings.value else null, found).also {
+                        _settings.value = it
+                        haveLocal = true
+                    }
                 }
+                Log.i(Tag, "Merged settings from backup")
+                write(appFile, merged)
+            } else {
+                // Keep an unreadable backup aside instead of overwriting it.
+                val aside = File(file.parentFile, "peloskin-backup.unreadable-${System.currentTimeMillis()}.json")
+                file.renameTo(aside)
+                Log.w(Tag, "Backup unreadable, kept as ${aside.name}")
             }
         }
         backupChecked = true
+        prefs.edit().putBoolean("backupChecked", true).apply()
+        write(backupFile, _settings.value)
     }
 
-    @Synchronized
     fun update(change: (Settings) -> Settings) {
-        val next = change(_settings.value)
-        _settings.value = next
-        write(appFile, next)
-        backup()
+        val next = synchronized(this) {
+            change(_settings.value).also {
+                _settings.value = it
+                haveLocal = true
+            }
+        }
+        io.execute {
+            write(appFile, next)
+            if (backupChecked) {
+                if (canUseBackup()) write(backupFile, next)
+            } else {
+                checkBackupNow()
+            }
+        }
     }
 
     fun setFtp(ftp: Int?, source: FtpSource = FtpSource.Manual, at: Long = System.currentTimeMillis()) = update {
@@ -143,31 +167,35 @@ object SettingsStore {
 
     fun clearBanner() { _ftpBanner.value = null }
 
-    /** @return true if the backup file was written. */
-    @Synchronized
+    /** Writes the backup now. @return true if it was written. */
     fun backup(): Boolean {
-        checkBackup()
+        if (!backupChecked) checkBackupNow()
         if (!backupChecked || !canUseBackup()) return false
         return write(backupFile, _settings.value)
     }
 
-    /** @return true if settings were loaded from the backup file. */
-    @Synchronized
+    /** Replaces everything with the backup file. @return true if it was loaded. */
     fun restore(): Boolean {
         if (!canUseBackup()) return false
         val s = read(backupFile) ?: return false
-        _settings.value = s
-        write(appFile, s)
+        synchronized(this) {
+            _settings.value = s
+            haveLocal = true
+        }
+        io.execute { write(appFile, s) }
         backupChecked = true
+        prefs.edit().putBoolean("backupChecked", true).apply()
         return true
     }
 
     // The in-progress ride, kept only in app storage (not the backup).
     fun saveCheckpoint(checkpoint: RideCheckpoint?) {
-        try {
-            if (checkpoint == null) checkpointFile.delete() else writeText(checkpointFile, CheckpointJson.encode(checkpoint))
-        } catch (e: Exception) {
-            Log.w(Tag, "Could not save ride checkpoint", e)
+        io.execute {
+            try {
+                if (checkpoint == null) checkpointFile.delete() else writeText(checkpointFile, CheckpointJson.encode(checkpoint))
+            } catch (e: Exception) {
+                Log.w(Tag, "Could not save ride checkpoint", e)
+            }
         }
     }
 

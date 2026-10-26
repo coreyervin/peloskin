@@ -1,6 +1,10 @@
 package app.peloskin
 
+import app.peloskin.data.bike.BikeFeed
+import app.peloskin.data.bike.FeedStatus
+import app.peloskin.data.bike.SensorSource
 import app.peloskin.data.store.CheckpointJson
+import app.peloskin.data.store.SettingsMerge
 import app.peloskin.data.store.SettingsJson
 import app.peloskin.domain.BikeMath
 import app.peloskin.domain.BikeSample
@@ -9,6 +13,7 @@ import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.Ftp
 import app.peloskin.domain.FtpSource
 import app.peloskin.domain.PowerZones
+import app.peloskin.domain.ResistanceFilter
 import app.peloskin.domain.RideSummary
 import app.peloskin.domain.RideTracker
 import app.peloskin.domain.Settings
@@ -17,9 +22,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PeloSkinTest {
+    private val Boot = 7
+
 
     @Test fun powerOnlyCountsWhilePedaling() {
         // The flywheel sensor can report spikes while the cranks are still.
@@ -127,10 +140,10 @@ class PeloSkinTest {
         var sec = 0
         repeat(1300) { a.onSample(sec++ * 1000L, BikeSample(210f, 90f, 40f, 20f)) }
         // Through JSON, the way it's stored on the tablet.
-        val saved = CheckpointJson.decode(CheckpointJson.encode(a.checkpoint(sec * 1000L)!!))!!
+        val saved = CheckpointJson.decode(CheckpointJson.encode(a.checkpoint(sec * 1000L, Boot)!!))!!
 
         val b = RideTracker()
-        assertTrue(b.resume(saved, sec * 1000L + 5_000))
+        assertTrue(b.resume(saved, sec * 1000L + 5_000, Boot))
         assertEquals(a.snapshot.totalKj, b.snapshot.totalKj, 0.01f)
         assertEquals(a.snapshot.best20Watts!!, b.snapshot.best20Watts!!, 0.01f)
         // Keeps riding where it left off.
@@ -142,13 +155,15 @@ class PeloSkinTest {
     @Test fun staleCheckpointsAreIgnored() {
         val a = RideTracker()
         repeat(60) { a.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
-        val saved = a.checkpoint(60_000L)!!
+        val saved = a.checkpoint(60_000L, Boot)!!
         // Saved "in the future" means the tablet rebooted since.
-        assertEquals(false, RideTracker().resume(saved, 30_000L))
+        assertEquals(false, RideTracker().resume(saved, 30_000L, Boot))
+        // Saved in an earlier boot, even if the clock happens to look fine.
+        assertEquals(false, RideTracker().resume(saved, 70_000L, Boot + 1))
         // Too long since the last pedal stroke.
-        assertEquals(false, RideTracker().resume(saved, 60_000L + 6 * 60_000L))
+        assertEquals(false, RideTracker().resume(saved, 60_000L + 6 * 60_000L, Boot))
         assertNull(CheckpointJson.decode("not json"))
-        assertNull(RideTracker().checkpoint(0L))
+        assertNull(RideTracker().checkpoint(0L, Boot))
     }
 
     @Test fun powerZones() {
@@ -194,5 +209,152 @@ class PeloSkinTest {
         assertEquals(200, s.ftp)
         assertEquals(SkinMode.Full, s.startMode)
         assertNotNull(s.compactMetrics.firstOrNull())
+    }
+
+    @Test fun checkpointWithWrongRingSizeIsRejected() {
+        val a = RideTracker()
+        repeat(60) { a.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
+        val c = a.checkpoint(60_000L, Boot)!!
+        val broken = CheckpointJson.decode(CheckpointJson.encode(c).replace(Regex("\"ring\":\\[[^]]*]"), "\"ring\":[1,2,3]"))!!
+        assertEquals(false, RideTracker().resume(broken, 61_000L, Boot))
+    }
+
+    @Test fun stoppingSavesTheRide() {
+        val finished = mutableListOf<RideSummary>()
+        val t = RideTracker(onRideFinished = { finished += it })
+        repeat(600) { t.onSample(it * 1000L, BikeSample(180f, 88f, 40f, 19f)) }
+        t.finish()
+        assertEquals(false, t.snapshot.riding)
+        assertEquals(599, finished.single().durationSec)
+        assertEquals(180, finished.single().avgPower)
+        t.finish()
+        assertEquals(1, finished.size)
+    }
+
+    @Test fun stoppingAShortSpinSavesNothing() {
+        val finished = mutableListOf<RideSummary>()
+        val t = RideTracker(onRideFinished = { finished += it })
+        repeat(120) { t.onSample(it * 1000L, BikeSample(180f, 88f, 40f, 19f)) }
+        t.finish()
+        assertTrue(finished.isEmpty())
+    }
+
+    @Test fun staleCheckpointBecomesARide() {
+        val t = RideTracker()
+        repeat(1500) { t.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
+        val summary = RideTracker.summaryOf(t.checkpoint(1_500_000L, Boot)!!)!!
+        assertEquals(1499, summary.durationSec)
+        assertEquals(200, summary.avgPower)
+        assertEquals(200, summary.best20Watts)
+        val short = RideTracker()
+        repeat(60) { short.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
+        assertNull(RideTracker.summaryOf(short.checkpoint(60_000L, Boot)!!))
+    }
+
+    @Test fun resistanceSpikesAreFiltered() {
+        val f = ResistanceFilter()
+        val out = listOf(40f, 40f, 40f, 100f, 40f, 40f, 45f, 45f, 45f)
+            .map { f.clean(BikeMath.sample(150f, 85f, it)).resistance }
+        // The single 100 never shows; the real step to 45 arrives one reading late.
+        assertEquals(listOf(40f, 40f, 40f, 40f, 40f, 40f, 40f, 45f, 45f), out)
+    }
+
+    @Test fun backupMergeKeepsEverything() {
+        val local = Settings(
+            ftp = 200, ftpSetAt = 100L, startMode = SkinMode.Compact,
+            rides = listOf(RideSummary(3L, 1800, 180, 320, 210), RideSummary(1L, 1200, 150, 180, null)),
+        )
+        val backup = Settings(
+            ftp = 230, ftpSetAt = 200L, startMode = SkinMode.Full,
+            rides = listOf(RideSummary(2L, 2400, 190, 450, 240), RideSummary(1L, 1200, 150, 180, null)),
+        )
+        val merged = SettingsMerge.merge(local, backup)
+        assertEquals(listOf(3L, 2L, 1L), merged.rides.map { it.startedAt })
+        assertEquals(230, merged.ftp)                    // backup's FTP is newer
+        assertEquals(SkinMode.Compact, merged.startMode) // local choices win
+        assertEquals(200, SettingsMerge.merge(local, backup.copy(ftpSetAt = 50L)).ftp)
+        assertEquals(backup, SettingsMerge.merge(null, backup))
+    }
+
+    // ------------------------------------------------------------------ feed
+
+    private class FakeSource(
+        override val name: String,
+        private val startsOk: Boolean = true,
+        private val onStart: ((BikeSample) -> Unit, () -> Unit) -> Unit = { _, _ -> },
+    ) : SensorSource {
+        var starts = 0
+        var stops = 0
+        override fun start(onSample: (BikeSample) -> Unit, onLost: () -> Unit): Boolean {
+            starts++
+            if (startsOk) onStart(onSample, onLost)
+            return startsOk
+        }
+        override fun stop() { stops++ }
+    }
+
+    @Test fun feedReportsUnsupportedBike() = runTest {
+        val feed = BikeFeed(emptyList(), log = {})
+        feed.start(backgroundScope)
+        runCurrent()
+        assertEquals(FeedStatus.Unsupported, feed.status.value)
+    }
+
+    @Test fun feedFallsBackToTheNextSource() = runTest {
+        val broken = FakeSource("service", startsOk = false)
+        val working = FakeSource("app", onStart = { sample, _ -> sample(BikeMath.sample(150f, 85f, 40f)) })
+        val feed = BikeFeed(listOf(broken, working), log = {})
+        val got = mutableListOf<BikeSample>()
+        backgroundScope.launch { feed.samples.collect { got += it } }
+        feed.start(backgroundScope)
+        runCurrent()
+        assertEquals(FeedStatus.Connected, feed.status.value)
+        assertEquals("app", feed.source.value)
+        assertEquals(150f, got.single().power, 0f)
+        assertEquals(1, broken.stops)
+    }
+
+    @Test fun feedReconnectsWhenTheServiceGoesAway() = runTest {
+        var lose: (() -> Unit)? = null
+        val source = FakeSource("service", onStart = { sample, lost -> sample(BikeMath.sample(150f, 85f, 40f)); lose = lost })
+        val feed = BikeFeed(listOf(source), log = {})
+        feed.start(backgroundScope)
+        runCurrent()
+        assertEquals(FeedStatus.Connected, feed.status.value)
+        lose!!()
+        runCurrent()
+        assertEquals(FeedStatus.Connecting, feed.status.value)
+        assertNull(feed.source.value)
+        advanceTimeBy(1_500)
+        runCurrent()
+        assertEquals(2, source.starts)
+        assertEquals(FeedStatus.Connected, feed.status.value)
+    }
+
+    @Test fun feedGivesUpOnASilentService() = runTest {
+        val silent = FakeSource("service")
+        val feed = BikeFeed(listOf(silent), log = {})
+        feed.start(backgroundScope)
+        advanceTimeBy(10_500)
+        runCurrent()
+        assertEquals(FeedStatus.NotFound, feed.status.value)
+        assertEquals(1, silent.stops)
+    }
+
+    @Test fun demoRideIsMarked() = runTest {
+        var demo = true
+        val feed = BikeFeed(emptyList(), demo = { demo }, log = {})
+        var count = 0
+        backgroundScope.launch { feed.samples.collect { count++ } }
+        feed.start(backgroundScope)
+        advanceTimeBy(1_100)
+        runCurrent()
+        assertTrue(feed.demoActive.value)
+        assertTrue(count >= 4)
+        demo = false
+        advanceTimeBy(300)
+        runCurrent()
+        assertEquals(false, feed.demoActive.value)
+        assertNull(feed.source.value)
     }
 }

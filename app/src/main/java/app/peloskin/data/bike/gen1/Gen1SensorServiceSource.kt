@@ -6,11 +6,13 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.Parcel
 import android.util.Log
-import app.peloskin.domain.BikeMath
-import app.peloskin.domain.BikeSample
 import app.peloskin.data.bike.SensorSource
 import app.peloskin.data.bike.ServiceBinding
 import app.peloskin.data.bike.Tag
+import app.peloskin.domain.BikeMath
+import app.peloskin.domain.BikeSample
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * Gen 1: Peloton's current sensor service (`com.onepeloton.affernetservice`, "IV1" interface).
@@ -20,18 +22,23 @@ class Gen1SensorServiceSource(private val context: Context) : SensorSource {
     override val name = "Peloton sensor service"
 
     private var binding: ServiceBinding? = null
-    private var service: IBinder? = null
+    @Volatile private var service: IBinder? = null
     private var callback: Binder? = null
+
+    // Registering waits for the service to answer, and a wedged service could hang it,
+    // so that call runs here instead of on the main thread.
+    private var calls: ExecutorService? = null
 
     override fun start(onSample: (BikeSample) -> Unit, onLost: () -> Unit): Boolean {
         val cb = Callback(onSample)
         callback = cb
+        val executor = Executors.newSingleThreadExecutor().also { calls = it }
         val b = ServiceBinding(
             context,
             Intent(Action).setPackage(Package),
             onConnected = { binder ->
                 service = binder
-                if (!transact(binder, Register, cb)) onLost()
+                executor.execute { if (!transact(binder, Register, cb, oneWay = false)) onLost() }
             },
             onLost = onLost,
         )
@@ -42,27 +49,31 @@ class Gen1SensorServiceSource(private val context: Context) : SensorSource {
     override fun stop() {
         val binder = service
         val cb = callback
-        if (binder != null && cb != null) transact(binder, Unregister, cb)
+        // One-way, so stopping never waits on the service.
+        if (binder != null && cb != null) transact(binder, Unregister, cb, oneWay = true)
+        calls?.shutdownNow()
+        calls = null
         binding?.unbind()
         binding = null
         service = null
         callback = null
     }
 
-    private fun transact(binder: IBinder, code: Int, cb: Binder): Boolean {
+    private fun transact(binder: IBinder, code: Int, cb: Binder, oneWay: Boolean): Boolean {
         val data = Parcel.obtain()
-        val reply = Parcel.obtain()
+        val reply = if (oneWay) null else Parcel.obtain()
         return try {
             data.writeInterfaceToken(Descriptor)
             data.writeStrongBinder(cb)
             data.writeString(ClientName)
-            binder.transact(code, data, reply, 0).also { if (it) reply.readException() }
+            val flags = if (oneWay) IBinder.FLAG_ONEWAY else 0
+            binder.transact(code, data, reply, flags).also { if (it) reply?.readException() }
         } catch (e: Exception) {
             Log.w(Tag, "Sensor service call $code failed", e)
             false
         } finally {
             data.recycle()
-            reply.recycle()
+            reply?.recycle()
         }
     }
 

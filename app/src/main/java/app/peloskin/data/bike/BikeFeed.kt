@@ -1,9 +1,9 @@
 package app.peloskin.data.bike
 
-import android.os.SystemClock
 import android.util.Log
 import app.peloskin.domain.BikeMath
 import app.peloskin.domain.BikeSample
+import app.peloskin.domain.ResistanceFilter
 import kotlin.math.max
 import kotlin.math.sin
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +35,7 @@ enum class FeedStatus {
 class BikeFeed(
     private val sources: List<SensorSource>,
     private val demo: () -> Boolean = { false },
+    private val log: (String) -> Unit = { Log.i("PeloSkin", it) },
 ) {
     private val _status = MutableStateFlow(FeedStatus.Connecting)
     val status: StateFlow<FeedStatus> = _status
@@ -42,6 +43,10 @@ class BikeFeed(
     private val _source = MutableStateFlow<String?>(null)
     /** Which source is feeding us, for the settings screen. */
     val source: StateFlow<String?> = _source
+
+    private val _demoActive = MutableStateFlow(false)
+    /** True while the readings are made up, so they stay out of ride history. */
+    val demoActive: StateFlow<Boolean> = _demoActive
 
     private val _samples = MutableSharedFlow<BikeSample>(extraBufferCapacity = 64)
     val samples: SharedFlow<BikeSample> = _samples
@@ -95,6 +100,7 @@ class BikeFeed(
             return false
         }
         var gotData = false
+        val filter = ResistanceFilter()
         try {
             while (true) {
                 // The bike reports several times a second even when you aren't pedaling,
@@ -104,11 +110,11 @@ class BikeFeed(
                     is Event.Sample -> {
                         if (!gotData) {
                             gotData = true
-                            Log.i("PeloSkin", "Reading the bike from ${source.name}")
+                            log("Reading the bike from ${source.name}")
                             _source.value = source.name
                             _status.value = FeedStatus.Connected
                         }
-                        _samples.tryEmit(event.sample)
+                        _samples.tryEmit(filter.clean(event.sample))
                     }
                     Event.Lost, null -> return gotData
                 }
@@ -121,10 +127,10 @@ class BikeFeed(
     /** A made-up interval ride, for trying PeloSkin on a device that isn't a Peloton. */
     private suspend fun runDemo() {
         _source.value = "Demo ride"
+        _demoActive.value = true
         _status.value = FeedStatus.Connected
-        val start = SystemClock.elapsedRealtime()
+        var t = 0.0
         while (demo()) {
-            val t = (SystemClock.elapsedRealtime() - start) / 1000.0
             val base = when {
                 t < 300 -> 90 + t / 300 * 60
                 t % 240 < 120 -> 230.0
@@ -134,6 +140,10 @@ class BikeFeed(
             val cadence = (78 + power / 12 + 2 * sin(t * 0.9)).toFloat()
             _samples.tryEmit(BikeMath.sample(power, cadence, (25 + power / 8).coerceAtMost(100f)))
             delay(250)
+            t += 0.25
         }
+        _demoActive.value = false
+        _source.value = null
+        _status.value = FeedStatus.Connecting
     }
 }

@@ -39,8 +39,10 @@ Code is organized by bike model under `data/bike/`:
 - `BikeModel.detect()` reads Peloton's `Settings.Global["peloton_platform"]`
   (`v1` = Gen 1 Bike, `titan` = Bike+, `prism` = Tread, `caesar` = Row).
 - `BikeModel.sources()` lists the `SensorSource`s to try, in order, for each model.
-- `BikeFeed` tries them in order, reconnects when one goes away, and reports
-  `Unsupported` for a model with no sources.
+- `BikeFeed` tries them in order, reconnects when one goes away, reports `Unsupported` for a
+  model with no sources, and runs every reading through the domain `ResistanceFilter`.
+- Sources must not block the main thread. `Gen1SensorServiceSource` registers on its own
+  thread and unregisters with `FLAG_ONEWAY`, because the Peloton service can hang.
 
 To add a model (Bike+ is next):
 
@@ -84,9 +86,13 @@ export JAVA_HOME=/path/to/jdk17
 ./gradlew testDebugUnitTest assembleRelease
 ```
 
-- Unit tests live in `app/src/test`. Add tests for any domain change.
+- Unit tests live in `app/src/test`. Add tests for any domain change. `BikeFeed` is tested
+  with fake `SensorSource`s and `kotlinx-coroutines-test`.
 - On an emulator or other non-Peloton device, the settings screen has a **Demo ride** switch
-  that feeds a made-up interval ride. Use it for UI work and screenshots.
+  that feeds a made-up interval ride. Use it for UI work and screenshots. Demo rides are kept
+  out of ride history.
+- The launcher entry is an `activity-alias` named `.MainActivity` pointing at
+  `ui.settings.MainActivity`. Keep that name so home-screen shortcuts survive updates.
 - On the bike, over adb: install, then
   `adb shell appops set app.peloskin SYSTEM_ALERT_WINDOW allow` and
   `adb shell appops set app.peloskin MANAGE_EXTERNAL_STORAGE allow`.

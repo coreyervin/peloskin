@@ -71,7 +71,8 @@ Peloton's older sensor app if the service doesn't answer.
 
 | Shown | Where it comes from |
 |---|---|
-| Output, cadence, resistance | The bike, several times a second. The screen redraws 4 times a second with the average since the last redraw. |
+| Output, cadence | The bike, several times a second. The screen redraws 4 times a second with the average since the last redraw. |
+| Resistance | The bike's latest setting, with one-off sensor glitches filtered out |
 | Speed | Calculated from output with Peloton's power-to-speed curve, as measured by the [PeloMon](https://ihaque.org/posts/2020/12/25/pelomon-part-ib-computing-speed/) project |
 | AVG and BEST | Averaged only while you're pedaling, so pauses don't drag them down |
 | Total output, distance | Watts and speed added up over time |
@@ -79,8 +80,10 @@ Peloton's older sensor app if the service doesn't answer.
 | Power zone | Current output ÷ FTP, using Peloton's 7 zones (55 / 75 / 90 / 105 / 120 / 150%) |
 | FTP | 95% of your best rolling 20-minute average |
 
-A ride starts when you start pedaling and ends after 5 minutes without pedaling. Those idle
-minutes aren't counted, and rides with less than 5 minutes of pedaling aren't saved.
+A ride starts when you start pedaling and ends after 5 minutes without pedaling, or when you
+tap **Stop**. Idle minutes aren't counted, and rides with less than 5 minutes of pedaling
+aren't saved. If the bike is switched off mid-ride, the ride is saved the next time PeloSkin
+starts.
 
 ## Install
 
@@ -100,14 +103,14 @@ adb shell appops set app.peloskin MANAGE_EXTERNAL_STORAGE allow   # Android 11+
 # Keep Android from putting it to sleep mid-ride
 adb shell dumpsys deviceidle whitelist +app.peloskin
 
-adb shell am start -n app.peloskin/.ui.settings.MainActivity
+adb shell am start -n app.peloskin/.MainActivity
 ```
 
 Tap **Start**. From then on, PeloSkin starts with the bike and comes back by itself after updates.
 
 Already using Grupetto just for its overlay? You don't need it for PeloSkin. Turn off its
-*Start on boot* or uninstall it. They can also run side by side if you use Grupetto to
-broadcast to another device.
+*Start on boot* or uninstall it. If you also use Grupetto to broadcast to another device, both
+can run at once, but Grupetto's own overlay will show as well.
 
 ## Using it
 
@@ -151,8 +154,11 @@ signed with a different key.
 ## Testing off the bike
 
 On a device that isn't a Peloton (an emulator, say), the settings screen offers a **Demo ride**
-switch that feeds PeloSkin a made-up interval ride. The ride math, FTP rules, power zones,
-speed curve, checkpoints and backup format are covered by unit tests in `app/src/test`.
+switch that feeds PeloSkin a made-up interval ride. Demo rides never go into your history.
+
+Unit tests in `app/src/test` cover the ride math, FTP rules, power zones, the speed curve, the
+resistance filter, checkpoints, backup merging, and how the feed falls back, reconnects and
+gives up. The Peloton sensor readers themselves need a real bike to test.
 
 ## Project layout
 
@@ -178,7 +184,7 @@ See [AGENTS.md](AGENTS.md) for how the Peloton sensor services work and how to a
 
 **It says "Can't read the bike".**
 Check that the sensor cable is plugged into the back of the tablet, then restart the bike.
-PeloSkin keeps retrying every few seconds.
+PeloSkin keeps retrying on its own.
 
 **Can it send my numbers to Zwift, Strava, a watch, or the Peloton app?**
 No, and that's on purpose: PeloSkin only shows numbers on the bike's own screen. For
