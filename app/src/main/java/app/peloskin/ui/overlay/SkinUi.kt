@@ -41,9 +41,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import app.peloskin.R
 import app.peloskin.data.bike.FeedStatus
+import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.PowerZones
 import app.peloskin.domain.RideSnapshot
-import app.peloskin.domain.CompactMetric
+import app.peloskin.domain.Units
 import kotlin.math.roundToInt
 
 val Figtree = FontFamily(
@@ -84,6 +85,7 @@ data class SkinState(
     val feed: FeedStatus,
     val ftp: Int?,
     val ftpBanner: Int?,
+    val units: Units = Units.Imperial,
 )
 
 private fun SkinState.live() = feed == FeedStatus.Connected
@@ -137,9 +139,9 @@ fun FullSkin(state: SkinState, onToggle: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
-                StripItem("Speed", "(mph)", r.speedMph.oneDp(live), s)
+                StripItem("Speed", "(${state.units.speedLabel})", state.units.speed(r.speedMph).oneDp(live), s)
                 StripDivider(s)
-                StripItem("Distance", "(mi)", r.distanceMi.twoDp(live), s)
+                StripItem("Distance", "(${state.units.distanceLabel})", state.units.distance(r.distanceMi).twoDp(live), s)
             }
             Box(Modifier.width(s.dp(FoldSlot)), contentAlignment = Alignment.Center) {
                 FoldButtonView(expanded = true)
@@ -339,8 +341,8 @@ fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, onToggle: () -> 
                         }
                     }
                     CompactMetric.Resistance -> CompactItem("Resistance", r.resistance.whole(true), "%", s)
-                    CompactMetric.Speed -> CompactItem("Speed", r.speedMph.oneDp(true), "mph", s)
-                    CompactMetric.Distance -> CompactItem("Distance", r.distanceMi.twoDp(true), "mi", s)
+                    CompactMetric.Speed -> CompactItem("Speed", state.units.speed(r.speedMph).oneDp(true), state.units.speedLabel, s)
+                    CompactMetric.Distance -> CompactItem("Distance", state.units.distance(r.distanceMi).twoDp(true), state.units.distanceLabel, s)
                     CompactMetric.TotalOutput -> CompactItem("Total", r.totalKj.whole(true), "kJ", s)
                     CompactMetric.Calories -> CompactItem("Calories", r.calories.whole(true), "kcal", s)
                 }

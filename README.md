@@ -39,6 +39,7 @@ use [Grupetto](https://github.com/doudar/grupetto). That's what it's built for.
 | **Full layout** | Cadence, Output and Resistance in big numbers, each with AVG (green ▲ or red ▼ trend arrow) and BEST. Below them is a solid strip with speed, distance, total output (kJ) and calories. |
 | **Tap to switch** | Tap anywhere on the skin to switch between the full layout and a single-line bar, and tap the bar to switch back. |
 | **Single-line bar** | One thin line with the numbers you pick. Drag it to the top or bottom edge, and it stays there. |
+| **mph or km/h** | Pick miles or kilometres in settings. Speed and distance follow, and the choice is kept and backed up. |
 | **Power zones** | A 7-zone bar with your % of FTP, using Peloton's zone boundaries. |
 | **Automatic FTP** | Your FTP is 95% of your best 20-minute average. PeloSkin tracks that on every ride and raises your FTP when you beat it. Easy rides never lower it, and a lower retest is one tap away in your ride history. |
 | **Ride history** | Keeps your last 100 rides with duration, average watts, kJ and best 20 minutes. |

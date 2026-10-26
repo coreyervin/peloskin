@@ -4,8 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
-import app.peloskin.ui.overlay.SkinService
 import app.peloskin.data.store.SettingsStore
+import app.peloskin.ui.overlay.SkinService
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

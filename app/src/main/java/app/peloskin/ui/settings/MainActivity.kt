@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,8 +19,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,7 +30,6 @@ import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Checkbox
 import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.OutlinedButton
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Switch
 import androidx.compose.material.SwitchDefaults
@@ -54,19 +54,20 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import app.peloskin.data.bike.BikeModel
 import app.peloskin.data.bike.FeedStatus
-import app.peloskin.ui.overlay.Figtree
-import app.peloskin.ui.overlay.SkinService
-import app.peloskin.domain.Ftp
-import app.peloskin.domain.FtpSource
+import app.peloskin.data.store.SettingsStore
 import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.CompactMetric
-import app.peloskin.data.store.SettingsStore
+import app.peloskin.domain.Ftp
+import app.peloskin.domain.FtpSource
 import app.peloskin.domain.SkinMode
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
+import app.peloskin.domain.Units
+import app.peloskin.ui.overlay.Figtree
+import app.peloskin.ui.overlay.SkinService
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 private val Bg = Color(0xFF111317)
 private val Card = Color(0xFF1A1D23)
@@ -179,6 +180,10 @@ class MainActivity : ComponentActivity() {
                             Text("Start in", color = Muted, style = bodyStyle)
                             Choice(listOf(SkinMode.Full to "Full", SkinMode.Compact to "Single line"), settings.startMode) { v ->
                                 SettingsStore.update { it.copy(startMode = v) }
+                            }
+                            Text("Speed and distance in", color = Muted, style = bodyStyle)
+                            Choice(listOf(Units.Imperial to "mph · miles", Units.Metric to "km/h · km"), settings.units) { v ->
+                                SettingsStore.update { it.copy(units = v) }
                             }
                             Text("Single-line bar sits at the", color = Muted, style = bodyStyle)
                             Choice(listOf(CompactEdge.Top to "Top", CompactEdge.Bottom to "Bottom"), settings.compactEdge) { v ->

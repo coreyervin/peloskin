@@ -29,16 +29,17 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import app.peloskin.ui.settings.MainActivity
 import app.peloskin.data.bike.BikeFeed
 import app.peloskin.data.bike.BikeModel
-import app.peloskin.domain.BikeSample
 import app.peloskin.data.bike.FeedStatus
+import app.peloskin.data.store.SettingsStore
+import app.peloskin.domain.BikeSample
+import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.RideSnapshot
 import app.peloskin.domain.RideTracker
-import app.peloskin.domain.CompactEdge
-import app.peloskin.data.store.SettingsStore
 import app.peloskin.domain.SkinMode
+import app.peloskin.ui.settings.MainActivity
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,7 +48,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 class SkinService : LifecycleService(), SavedStateRegistryOwner {
 
@@ -274,7 +274,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         val f by feed.status.collectAsState()
         val settings by SettingsStore.settings.collectAsState()
         val banner by SettingsStore.ftpBanner.collectAsState()
-        return SkinState(r, f, settings.ftp, banner)
+        return SkinState(r, f, settings.ftp, banner, settings.units)
     }
 
     private fun composeView(content: @androidx.compose.runtime.Composable () -> Unit) =

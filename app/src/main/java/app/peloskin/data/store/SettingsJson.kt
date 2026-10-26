@@ -6,6 +6,7 @@ import app.peloskin.domain.FtpSource
 import app.peloskin.domain.RideSummary
 import app.peloskin.domain.Settings
 import app.peloskin.domain.SkinMode
+import app.peloskin.domain.Units
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,6 +24,7 @@ object SettingsJson {
         put("compactEdge", s.compactEdge.name)
         put("compactMetrics", JSONArray(s.compactMetrics.map { it.name }))
         put("startOnBoot", s.startOnBoot)
+        put("units", s.units.name)
         put("rides", JSONArray(s.rides.map { r ->
             JSONObject().apply {
                 put("startedAt", r.startedAt)
@@ -61,6 +63,7 @@ object SettingsJson {
             compactEdge = enumOrNull<CompactEdge>(o.optString("compactEdge")) ?: d.compactEdge,
             compactMetrics = metrics,
             startOnBoot = o.optBoolean("startOnBoot", d.startOnBoot),
+            units = enumOrNull<Units>(o.optString("units")) ?: d.units,
             rides = rides,
         )
     }

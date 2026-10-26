@@ -4,8 +4,8 @@ import app.peloskin.data.bike.BikeFeed
 import app.peloskin.data.bike.FeedStatus
 import app.peloskin.data.bike.SensorSource
 import app.peloskin.data.store.CheckpointJson
-import app.peloskin.data.store.SettingsMerge
 import app.peloskin.data.store.SettingsJson
+import app.peloskin.data.store.SettingsMerge
 import app.peloskin.domain.BikeMath
 import app.peloskin.domain.BikeSample
 import app.peloskin.domain.CompactEdge
@@ -18,16 +18,17 @@ import app.peloskin.domain.RideSummary
 import app.peloskin.domain.RideTracker
 import app.peloskin.domain.Settings
 import app.peloskin.domain.SkinMode
+import app.peloskin.domain.Units
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Test
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PeloSkinTest {
@@ -194,6 +195,7 @@ class PeloSkinTest {
             startMode = SkinMode.Compact, compactEdge = CompactEdge.Top,
             compactMetrics = listOf(CompactMetric.Output, CompactMetric.Calories),
             startOnBoot = false,
+            units = Units.Metric,
             rides = listOf(RideSummary(5L, 1800, 180, 320, 256), RideSummary(6L, 600, 120, 70, null)),
         )
         assertEquals(s, SettingsJson.decode(SettingsJson.encode(s)))
@@ -356,5 +358,14 @@ class PeloSkinTest {
         runCurrent()
         assertEquals(false, feed.demoActive.value)
         assertNull(feed.source.value)
+    }
+
+    @Test fun unitsConvertSpeedAndDistance() {
+        assertEquals(20f, Units.Imperial.speed(20f), 0f)
+        assertEquals(32.19f, Units.Metric.speed(20f), 0.01f)
+        assertEquals(1.61f, Units.Metric.distance(1f), 0.01f)
+        assertEquals("km/h", Units.Metric.speedLabel)
+        // Older backups without a units field stay in miles.
+        assertEquals(Units.Imperial, SettingsJson.decode("""{"version":1}""").units)
     }
 }
