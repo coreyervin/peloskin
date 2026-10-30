@@ -46,7 +46,7 @@ what it's built for.
 | **Single-line bar** | Tap the skin to shrink it to one thin line with the numbers you pick, and tap again to bring the full layout back. Drag the bar to the top or bottom edge, and it stays there. |
 | **Power zones** | A 7-zone bar with your % of FTP, using Peloton's zone boundaries. |
 | **Hold to end ride** | Press and hold the skin to end your ride and see its summary straight away. There's also an **End ride** button in settings. |
-| **Heart rate** | Pair any Bluetooth heart rate strap or armband, like in the Peloton app. Beats per minute show in both layouts, colored by heart rate zone. |
+| **Heart rate** | Pair any Bluetooth heart rate strap or armband, like in the Peloton app. Beats per minute show in both layouts, with the heart rate zone in the full layout. |
 | **mph or km/h** | Speed and distance in miles or kilometres. |
 
 **Your riding, kept by PeloSkin**
@@ -167,7 +167,7 @@ can run at once, but Grupetto's own overlay will show as well.
   standard Bluetooth heart rate service works: Polar, Garmin, Wahoo, Coospo, Apple Watch with a
   heart rate broadcast app, and others.
 - **Each rider has their own.** When you switch rider, PeloSkin drops the last monitor and looks
-  for the new rider's. While it's looking, the heart shows grey with `--`.
+  for the new rider's. While it's looking, heart rate shows `--`.
 - **Zones:** enter a max heart rate on the rider's card for the 5 heart rate zones (Peloton's:
   under 65%, 65–75%, 75–85%, 85–95% and over 95% of max). 220 minus your age is the usual estimate.
 - **Also using it in the Peloton app?** Many straps allow two connections at once (the Polar H10

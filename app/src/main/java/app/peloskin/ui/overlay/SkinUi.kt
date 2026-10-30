@@ -121,10 +121,6 @@ val HeartRateZoneColors = listOf(
     Color(0xFF5B8DB8), Color(0xFF3FD28B), Color(0xFFE6B422), Color(0xFFF08A3C), Color(0xFFFF4A55),
 )
 
-private fun HeartRateReading.color(): Color = if (zone in 1..5) HeartRateZoneColors[zone - 1] else HeartRed
-
-private val HeartRed = Color(0xFFFF4A55)
-
 /** A heart, drawn because the tablet's fonts don't all have one. */
 @Composable
 fun HeartIcon(color: Color, modifier: Modifier) {
@@ -143,26 +139,20 @@ fun HeartIcon(color: Color, modifier: Modifier) {
     }
 }
 
-/** Heart rate in the full layout's strip: the heart, beats per minute, and the zone. */
+/** Heart rate in the full layout's strip, styled like the other strip numbers, with the zone. */
 @Composable
 private fun HeartRateStripItem(hr: HeartRateReading, s: Scale, modifier: Modifier = Modifier) {
-    Row(modifier.padding(horizontal = s.dp(1.4f)), verticalAlignment = Alignment.CenterVertically) {
-        HeartIcon(if (hr.bpm == null) Dim else hr.color(), Modifier.size(s.dp(1.5f)))
-        Spacer(Modifier.width(s.dp(0.6f)))
-        Column(horizontalAlignment = Alignment.Start) {
-            Text(
-                when {
-                    hr.searching -> "SEARCHING"
-                    hr.zone > 0 -> "ZONE ${hr.zone} · BPM"
-                    else -> "HEART RATE · BPM"
-                },
-                color = Dim,
-                style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = s.sp(0.72f), letterSpacing = 0.08.em),
-            )
-            Spacer(Modifier.height(s.dp(0.35f)))
-            Text(hr.bpm?.toString() ?: "--", color = Ink, style = TextStyle(fontFamily = Figtree, fontSize = s.sp(1.3f)))
-        }
-    }
+    StripItem(
+        "Heart rate",
+        when {
+            hr.searching -> "(searching)"
+            hr.zone > 0 -> "(zone ${hr.zone})"
+            else -> "(bpm)"
+        },
+        hr.bpm?.toString() ?: "--",
+        s,
+        modifier,
+    )
 }
 
 /**
@@ -429,9 +419,9 @@ private fun ZoneBlocks(zone: Int, s: Scale, blockWidth: Float, blockHeight: Floa
 }
 
 @Composable
-private fun StripItem(name: String, unit: String, value: String, s: Scale) {
+private fun StripItem(name: String, unit: String, value: String, s: Scale, modifier: Modifier = Modifier) {
     Column(
-        Modifier.padding(horizontal = s.dp(3.2f)),
+        modifier.padding(horizontal = s.dp(3.2f)),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("${name.uppercase()} $unit", color = Dim, style = TextStyle(
@@ -509,14 +499,7 @@ fun CompactSkin(
             // A rider with a heart rate monitor always gets their heart rate, at the end.
             state.heartRate?.let { hr ->
                 Box(Modifier.width(1.dp).height(s.dp(1.6f)).background(Color(0x2EFFFFFF)))
-                Row(Modifier.padding(horizontal = s.dp(1.1f)), verticalAlignment = Alignment.CenterVertically) {
-                    HeartIcon(if (hr.bpm == null) Dim else hr.color(), Modifier.size(s.dp(1.05f)))
-                    Spacer(Modifier.width(s.dp(0.45f)))
-                    Text(hr.bpm?.toString() ?: "--", color = Ink,
-                        style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Light, fontSize = s.sp(1.7f)))
-                    Spacer(Modifier.width(s.dp(0.3f)))
-                    Text("bpm", color = Dim, style = TextStyle(fontFamily = Figtree, fontSize = s.sp(0.7f)))
-                }
+                CompactItem("Heart rate", hr.bpm?.toString() ?: "--", "bpm", s)
             }
         }
         Spacer(Modifier.width(s.dp(0.5f)))
