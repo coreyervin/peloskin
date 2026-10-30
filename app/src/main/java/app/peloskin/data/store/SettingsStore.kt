@@ -9,7 +9,10 @@ import android.util.Log
 import androidx.core.util.AtomicFile
 import app.peloskin.domain.Ftp
 import app.peloskin.domain.FtpSource
+import app.peloskin.domain.PersonalRecords
+import app.peloskin.domain.Profile
 import app.peloskin.domain.RideCheckpoint
+import app.peloskin.domain.RideDetail
 import app.peloskin.domain.RideSummary
 import app.peloskin.domain.Settings
 import java.io.File
@@ -42,9 +45,18 @@ object SettingsStore {
         prefs.edit().putBoolean("demoRide", on).apply()
     }
 
-    /** Set when a ride raises the FTP, so the skin can show a short banner. */
-    private val _ftpBanner = MutableStateFlow<Int?>(null)
-    val ftpBanner: StateFlow<Int?> = _ftpBanner
+    /** A short message for the skin: a new FTP, a new PR, or who's riding now. */
+    private val _banner = MutableStateFlow<String?>(null)
+    val banner: StateFlow<String?> = _banner
+
+    fun showBanner(text: String) { _banner.value = text }
+    fun clearBanner() { _banner.value = null }
+
+    /** The ride that just ended, for the summary card. Cleared once it's been seen. */
+    private val _lastFinished = MutableStateFlow<FinishedRide?>(null)
+    val lastFinished: StateFlow<FinishedRide?> = _lastFinished
+
+    fun dismissSummary() { _lastFinished.value = null }
 
     /**
      * False until the backup file has been read, or confirmed missing. Until then we never
@@ -140,9 +152,50 @@ object SettingsStore {
         }
     }
 
-    fun setFtp(ftp: Int?, source: FtpSource = FtpSource.Manual, at: Long = System.currentTimeMillis()) = update {
-        it.copy(ftp = ftp?.takeIf { f -> f > 0 }, ftpSource = source, ftpSetAt = at)
+    // ---------------------------------------------------------------- riders
+
+    fun setActiveProfile(id: String) {
+        val current = _settings.value
+        if (current.activeProfileId == id || current.profiles.none { it.id == id }) return
+        update { it.copy(activeProfileId = id) }
+        showBanner("Riding as ${_settings.value.active.name}")
     }
+
+    /** Switches to the next rider, for the chip on the skin. */
+    fun nextProfile() {
+        val s = _settings.value
+        if (s.profiles.size < 2) return
+        val i = s.profiles.indexOfFirst { it.id == s.active.id }
+        setActiveProfile(s.profiles[(i + 1) % s.profiles.size].id)
+    }
+
+    fun addProfile(name: String) {
+        val clean = name.trim().take(20).ifEmpty { return }
+        update { s ->
+            val id = "rider-${System.currentTimeMillis()}"
+            s.copy(profiles = s.profiles + Profile(id, clean), activeProfileId = id)
+        }
+    }
+
+    fun renameProfile(id: String, name: String) {
+        val clean = name.trim().take(20).ifEmpty { return }
+        update { s -> s.copy(profiles = s.profiles.map { if (it.id == id) it.copy(name = clean) else it }) }
+    }
+
+    /** Removes a rider and their history. The last rider can't be removed. */
+    fun deleteProfile(id: String) = update { s ->
+        if (s.profiles.size < 2) return@update s
+        val rest = s.profiles.filter { it.id != id }
+        s.copy(profiles = rest, activeProfileId = if (s.activeProfileId == id) rest.first().id else s.activeProfileId)
+    }
+
+    // ------------------------------------------------------------- FTP & rides
+
+    fun setFtp(ftp: Int?, source: FtpSource = FtpSource.Manual, at: Long = System.currentTimeMillis()) = update { s ->
+        s.withActive { it.copy(ftp = ftp?.takeIf { f -> f > 0 }, ftpSource = source, ftpSetAt = at) }
+    }
+
+    fun setAutoFtp(on: Boolean) = update { s -> s.withActive { it.copy(autoFtp = on) } }
 
     /** Use a ride's best 20 minutes as FTP, even if it's lower (a retest). */
     fun useRideForFtp(ride: RideSummary) {
@@ -150,22 +203,72 @@ object SettingsStore {
         setFtp(Ftp.fromBest20(best20), FtpSource.Ride, ride.startedAt)
     }
 
-    fun recordRide(ride: RideSummary) {
-        var raisedTo: Int? = null
+    /**
+     * Saves a finished ride for the current rider: history, records, FTP and its graph, and
+     * offers it as [lastFinished] for the summary card.
+     */
+    fun recordRide(ride: RideSummary, detail: RideDetail) {
+        var finished: FinishedRide? = null
         update { s ->
-            val rides = (listOf(ride) + s.rides).take(Settings.MaxRides)
-            val newFtp = Ftp.afterRide(s.ftp, s.autoFtp, ride)
-            if (newFtp != null) {
-                raisedTo = newFtp
-                s.copy(rides = rides, ftp = newFtp, ftpSource = FtpSource.Ride, ftpSetAt = ride.startedAt)
-            } else {
-                s.copy(rides = rides)
+            s.withActive { p ->
+                val previous = PersonalRecords.previousSimilar(p.rides, ride)
+                val (records, broken) = PersonalRecords.apply(p.records, ride)
+                val newFtp = Ftp.afterRide(p.ftp, p.autoFtp, ride)
+                finished = FinishedRide(p.id, p.name, ride, detail, previous, broken, newFtp)
+                val rides = (listOf(ride) + p.rides).take(Settings.MaxRides)
+                val updated = p.copy(rides = rides, records = records)
+                if (newFtp != null) updated.copy(ftp = newFtp, ftpSource = FtpSource.Ride, ftpSetAt = ride.startedAt) else updated
             }
         }
-        raisedTo?.let { _ftpBanner.value = it }
+        val f = finished ?: return
+        io.execute { saveDetail(f.profileId, detail) }
+        // Only records that beat an earlier one count; on a first ride everything is "new".
+        val prs = f.newRecords.filter { it.previous != null }
+        val parts = listOfNotNull(
+            f.newFtp?.let { "New FTP $it" },
+            prs.takeIf { it.isNotEmpty() }?.let { "New PR · " + it.joinToString(" · ") { r -> r.label() } },
+        )
+        if (parts.isNotEmpty()) showBanner(parts.joinToString("  ·  "))
+        _lastFinished.value = f
     }
 
-    fun clearBanner() { _ftpBanner.value = null }
+    /** Shows a demo ride's summary without saving anything. */
+    fun showDemoSummary(ride: RideSummary, detail: RideDetail) {
+        _lastFinished.value = FinishedRide("demo", "Demo ride", ride, detail, previous = null, newRecords = emptyList(), newFtp = null)
+    }
+
+    /** A ride's graph, from the app's own copy or the backup. */
+    fun loadDetail(profileId: String, startedAt: Long): RideDetail? {
+        for (dir in listOfNotNull(appRidesDir, backupRidesDir.takeIf { canUseBackup() })) {
+            val f = File(dir, "$profileId/$startedAt.json")
+            if (f.exists()) {
+                val d = runCatching { RideDetailJson.decode(AtomicFile(f).readFully().decodeToString()) }.getOrNull()
+                if (d != null) return d
+            }
+        }
+        return null
+    }
+
+    private val appRidesDir: File get() = File(appContext.filesDir, "rides")
+    private val backupRidesDir: File get() = File(backupFile.parentFile, "rides")
+
+    private fun saveDetail(profileId: String, detail: RideDetail) {
+        val text = RideDetailJson.encode(detail)
+        val name = "$profileId/${detail.startedAt}.json"
+        runCatching { writeText(File(appRidesDir, name), text) }.onFailure { Log.w(Tag, "Could not save ride graph", it) }
+        if (backupChecked && canUseBackup()) {
+            runCatching { writeText(File(backupRidesDir, name), text) }.onFailure { Log.w(Tag, "Could not back up ride graph", it) }
+        }
+        pruneDetails()
+    }
+
+    /** Graphs for rides that have dropped out of history aren't needed any more. */
+    private fun pruneDetails() {
+        val keep = _settings.value.profiles.flatMap { p -> p.rides.map { "${p.id}/${it.startedAt}.json" } }.toSet()
+        appRidesDir.listFiles()?.forEach { profileDir ->
+            profileDir.listFiles()?.forEach { f -> if ("${profileDir.name}/${f.name}" !in keep) f.delete() }
+        }
+    }
 
     /** Writes the backup now. @return true if it was written. */
     fun backup(): Boolean {

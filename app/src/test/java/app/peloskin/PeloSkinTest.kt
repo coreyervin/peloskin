@@ -12,23 +12,29 @@ import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.Ftp
 import app.peloskin.domain.FtpSource
+import app.peloskin.domain.NewRecord
+import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.PowerZones
+import app.peloskin.domain.Profile
+import app.peloskin.domain.Record
+import app.peloskin.domain.Records
 import app.peloskin.domain.ResistanceFilter
+import app.peloskin.domain.RideDetail
 import app.peloskin.domain.RideSummary
 import app.peloskin.domain.RideTracker
 import app.peloskin.domain.Settings
 import app.peloskin.domain.SkinMode
 import app.peloskin.domain.Units
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PeloSkinTest {
@@ -60,7 +66,7 @@ class PeloSkinTest {
 
     @Test fun steadyRideTotalsAndFtp() {
         val finished = mutableListOf<RideSummary>()
-        val t = RideTracker(onRideFinished = { finished += it })
+        val t = RideTracker(onRideFinished = { ride, _ -> finished += ride })
         val start = 1_000_000L
         // 25 minutes at 200 W / 90 rpm, one sample per second.
         for (i in 0..1500) t.onSample(start + i * 1000L, BikeSample(200f, 90f, 40f, 20f))
@@ -107,7 +113,7 @@ class PeloSkinTest {
 
     @Test fun bumpingThePedalsIsNotARide() {
         val finished = mutableListOf<RideSummary>()
-        val t = RideTracker(onRideFinished = { finished += it })
+        val t = RideTracker(onRideFinished = { ride, _ -> finished += ride })
         var sec = 0
         repeat(2) { t.onSample(sec++ * 1000L, BikeSample(50f, 30f, 20f, 5f)) }
         repeat(400) { t.onSample(sec++ * 1000L, BikeSample(0f, 0f, 20f, 0f)) }
@@ -117,7 +123,7 @@ class PeloSkinTest {
 
     @Test fun rideEndsFromTickWhenFeedStops() {
         val finished = mutableListOf<RideSummary>()
-        val t = RideTracker(onRideFinished = { finished += it })
+        val t = RideTracker(onRideFinished = { ride, _ -> finished += ride })
         for (i in 0..600) t.onSample(i * 1000L, BikeSample(150f, 85f, 35f, 18f))
         t.tick(600_000L + 4 * 60_000L)
         assertTrue(t.snapshot.riding)
@@ -189,28 +195,57 @@ class PeloSkinTest {
         assertNull(Ftp.afterRide(null, autoUpdate = true, ride = ride.copy(best20Watts = null)))
     }
 
+    private val fullRide = RideSummary(
+        startedAt = 5L, durationSec = 1800, avgPower = 180, totalKj = 320, best20Watts = 256,
+        avgCadence = 88, avgResistance = 41, distanceMi = 9.5f, calories = 348,
+        bestEfforts = mapOf(5 to 610, 60 to 330, 300 to 270, 1200 to 256),
+        zoneSeconds = listOf(120, 300, 600, 500, 200, 60, 20), ftp = 240,
+    )
+
     @Test fun settingsSurviveJsonRoundTrip() {
+        val corey = Profile(
+            "rider-1", "Corey", ftp = 243, ftpSource = FtpSource.Ride, ftpSetAt = 1234L, autoFtp = false,
+            rides = listOf(fullRide, RideSummary(6L, 600, 120, 70, null)),
+            records = Records(
+                efforts = mapOf(5 to Record(610, 5L), 1200 to Record(256, 5L)),
+                byLength = mapOf(30 to Record(320, 5L)),
+            ),
+        )
         val s = Settings(
-            ftp = 243, ftpSource = FtpSource.Ride, ftpSetAt = 1234L, autoFtp = false,
+            profiles = listOf(corey, Profile("rider-2", "Jess", ftp = 190)),
+            activeProfileId = "rider-2",
             startMode = SkinMode.Compact, compactEdge = CompactEdge.Top,
             compactMetrics = listOf(CompactMetric.Output, CompactMetric.Calories),
             startOnBoot = false,
             units = Units.Metric,
-            rides = listOf(RideSummary(5L, 1800, 180, 320, 256), RideSummary(6L, 600, 120, 70, null)),
         )
         assertEquals(s, SettingsJson.decode(SettingsJson.encode(s)))
+        assertEquals("Jess", s.active.name)
     }
 
     @Test fun zeroFtpInBackupIsIgnored() {
-        assertNull(SettingsJson.decode("""{"ftp":0}""").ftp)
-        assertNull(SettingsJson.decode("""{"ftp":-5}""").ftp)
+        assertNull(SettingsJson.decode("""{"ftp":0}""").active.ftp)
+        assertNull(SettingsJson.decode("""{"profiles":[{"id":"a","name":"A","ftp":-5}]}""").active.ftp)
     }
 
-    @Test fun oldOrPartialBackupUsesDefaults() {
-        val s = SettingsJson.decode("""{"version":1,"ftp":200,"startMode":"Sideways"}""")
-        assertEquals(200, s.ftp)
+    @Test fun versionOneBackupBecomesOneRider() {
+        val s = SettingsJson.decode(
+            """{"version":1,"ftp":200,"ftpSource":"Ride","startMode":"Sideways",
+               "rides":[{"startedAt":9,"durationSec":1830,"avgPower":170,"totalKj":310,"best20":205}]}"""
+        )
+        assertEquals(1, s.profiles.size)
+        assertEquals(200, s.active.ftp)
+        assertEquals(FtpSource.Ride, s.active.ftpSource)
+        assertEquals(310, s.active.rides.single().totalKj)
+        // Old rides only knew their best 20 minutes.
+        assertEquals(mapOf(1200 to 205), s.active.rides.single().bestEfforts)
         assertEquals(SkinMode.Full, s.startMode)
         assertNotNull(s.compactMetrics.firstOrNull())
+    }
+
+    @Test fun staleActiveRiderFallsBackToTheFirst() {
+        val s = SettingsJson.decode("""{"profiles":[{"id":"a","name":"A"}],"activeProfileId":"gone"}""")
+        assertEquals("a", s.active.id)
     }
 
     @Test fun checkpointWithWrongRingSizeIsRejected() {
@@ -223,7 +258,7 @@ class PeloSkinTest {
 
     @Test fun stoppingSavesTheRide() {
         val finished = mutableListOf<RideSummary>()
-        val t = RideTracker(onRideFinished = { finished += it })
+        val t = RideTracker(onRideFinished = { ride, _ -> finished += ride })
         repeat(600) { t.onSample(it * 1000L, BikeSample(180f, 88f, 40f, 19f)) }
         t.finish()
         assertEquals(false, t.snapshot.riding)
@@ -235,7 +270,7 @@ class PeloSkinTest {
 
     @Test fun stoppingAShortSpinSavesNothing() {
         val finished = mutableListOf<RideSummary>()
-        val t = RideTracker(onRideFinished = { finished += it })
+        val t = RideTracker(onRideFinished = { ride, _ -> finished += ride })
         repeat(120) { t.onSample(it * 1000L, BikeSample(180f, 88f, 40f, 19f)) }
         t.finish()
         assertTrue(finished.isEmpty())
@@ -244,7 +279,8 @@ class PeloSkinTest {
     @Test fun staleCheckpointBecomesARide() {
         val t = RideTracker()
         repeat(1500) { t.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
-        val summary = RideTracker.summaryOf(t.checkpoint(1_500_000L, Boot)!!)!!
+        val (summary, detail) = RideTracker.summaryOf(t.checkpoint(1_500_000L, Boot)!!)!!
+        assertEquals(299, detail.powerEvery5s.size) // complete 5-second blocks only
         assertEquals(1499, summary.durationSec)
         assertEquals(200, summary.avgPower)
         assertEquals(200, summary.best20Watts)
@@ -262,20 +298,124 @@ class PeloSkinTest {
     }
 
     @Test fun backupMergeKeepsEverything() {
+        fun rider(id: String, ftp: Int, ftpSetAt: Long, rides: List<RideSummary>, best5: Int) = Profile(
+            id, id, ftp = ftp, ftpSetAt = ftpSetAt, rides = rides,
+            records = Records(efforts = mapOf(5 to Record(best5, rides.first().startedAt))),
+        )
         val local = Settings(
-            ftp = 200, ftpSetAt = 100L, startMode = SkinMode.Compact,
-            rides = listOf(RideSummary(3L, 1800, 180, 320, 210), RideSummary(1L, 1200, 150, 180, null)),
+            profiles = listOf(rider("a", 200, 100L, listOf(RideSummary(3L, 1800, 180, 320, 210), RideSummary(1L, 1200, 150, 180, null)), 600)),
+            activeProfileId = "a", startMode = SkinMode.Compact,
         )
         val backup = Settings(
-            ftp = 230, ftpSetAt = 200L, startMode = SkinMode.Full,
-            rides = listOf(RideSummary(2L, 2400, 190, 450, 240), RideSummary(1L, 1200, 150, 180, null)),
+            profiles = listOf(
+                rider("a", 230, 200L, listOf(RideSummary(2L, 2400, 190, 450, 240), RideSummary(1L, 1200, 150, 180, null)), 650),
+                rider("b", 180, 50L, listOf(RideSummary(4L, 1200, 140, 170, null)), 500),
+            ),
+            activeProfileId = "b", startMode = SkinMode.Full,
         )
         val merged = SettingsMerge.merge(local, backup)
-        assertEquals(listOf(3L, 2L, 1L), merged.rides.map { it.startedAt })
-        assertEquals(230, merged.ftp)                    // backup's FTP is newer
-        assertEquals(SkinMode.Compact, merged.startMode) // local choices win
-        assertEquals(200, SettingsMerge.merge(local, backup.copy(ftpSetAt = 50L)).ftp)
+        val a2 = merged.profiles.first { it.id == "a" }
+        assertEquals(listOf(3L, 2L, 1L), a2.rides.map { it.startedAt })
+        assertEquals(230, a2.ftp)                         // backup's FTP is newer
+        assertEquals(650, a2.records.efforts[5]!!.value)  // the better record wins
+        assertEquals(listOf("a", "b"), merged.profiles.map { it.id }) // a rider only in the backup comes back
+        assertEquals(SkinMode.Compact, merged.startMode)  // local choices win
+        assertEquals("a", merged.activeProfileId)
         assertEquals(backup, SettingsMerge.merge(null, backup))
+    }
+
+    // --------------------------------------------------------------- records
+
+    @Test fun bestEffortsAndGraphAreTracked() {
+        var got: Pair<RideSummary, RideDetail>? = null
+        val t = RideTracker(onRideFinished = { r, d -> got = r to d })
+        var sec = 0
+        // 10 min at 150 W with one hard minute at 300 W and a 5-second sprint at 600 W in it.
+        repeat(300) { t.onSample(sec++ * 1000L, BikeSample(150f, 85f, 35f, 18f)) }
+        repeat(55) { t.onSample(sec++ * 1000L, BikeSample(300f, 95f, 50f, 23f)) }
+        repeat(5) { t.onSample(sec++ * 1000L, BikeSample(600f, 110f, 50f, 28f)) }
+        repeat(240) { t.onSample(sec++ * 1000L, BikeSample(150f, 85f, 35f, 18f)) }
+        // A 2-minute idle tail before stopping.
+        repeat(120) { t.onSample(sec++ * 1000L, BikeSample(0f, 0f, 35f, 0f)) }
+        t.finish()
+        val (ride, detail) = got!!
+        assertEquals(600, ride.bestEfforts[5])
+        assertEquals((55 * 300 + 5 * 600) / 60, ride.bestEfforts[60])
+        assertTrue(ride.bestEfforts[300]!! in 180..200)
+        assertNull(ride.bestEfforts[1200]) // the ride is only 10 minutes long
+        // One point per 5 seconds, without the idle tail.
+        assertEquals(120, detail.powerEvery5s.size)
+        assertEquals(150, detail.powerEvery5s.first())
+    }
+
+    @Test fun timeInZonesSkipsTheIdleTail() {
+        var got: RideSummary? = null
+        val t = RideTracker(ftp = { 200 }, onRideFinished = { r, _ -> got = r })
+        var sec = 0
+        repeat(300) { t.onSample(sec++ * 1000L, BikeSample(200f, 90f, 40f, 20f)) } // 100% FTP: zone 4
+        repeat(30) { t.onSample(sec++ * 1000L, BikeSample(0f, 0f, 40f, 0f)) }      // a pause: zone 1
+        repeat(300) { t.onSample(sec++ * 1000L, BikeSample(100f, 80f, 30f, 15f)) } // 50% FTP: zone 1
+        repeat(200) { t.onSample(sec++ * 1000L, BikeSample(0f, 0f, 30f, 0f)) }     // idle tail, dropped
+        t.finish()
+        val zones = got!!.zoneSeconds!!
+        assertEquals(200, got!!.ftp)
+        assertTrue(zones[3] in 298..300)
+        assertTrue(zones[0] in 328..331)
+        assertEquals(zones.sum(), zones[0] + zones[3])
+    }
+
+    @Test fun noZonesWithoutAnFtp() {
+        var got: RideSummary? = null
+        val t = RideTracker(onRideFinished = { r, _ -> got = r })
+        repeat(400) { t.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
+        t.finish()
+        assertNull(got!!.zoneSeconds)
+    }
+
+    @Test fun recordsAreSetAndBroken() {
+        val first = fullRide
+        val (records, broken) = PersonalRecords.apply(Records(), first)
+        assertEquals(5, broken.size)               // four efforts and the 30-min ride, all firsts
+        assertTrue(broken.all { it.previous == null })
+        val better = first.copy(startedAt = 9L, totalKj = 340, bestEfforts = mapOf(5 to 600, 60 to 345))
+        val (after, broken2) = PersonalRecords.apply(records, better)
+        assertEquals(setOf(60, 30), broken2.map { if (it is NewRecord.Effort) it.seconds else (it as NewRecord.ClassLength).minutes }.toSet())
+        assertEquals(330, (broken2.first { it is NewRecord.Effort } as NewRecord.Effort).previous)
+        assertEquals(610, after.efforts[5]!!.value)  // not beaten, kept
+        assertEquals(9L, after.byLength[30]!!.startedAt)
+    }
+
+    @Test fun ridesAreGroupedByClassLength() {
+        assertEquals(30, PersonalRecords.classLength(31 * 60))
+        assertEquals(45, PersonalRecords.classLength(44 * 60))
+        assertEquals(20, PersonalRecords.classLength(19 * 60 + 10))
+        assertNull(PersonalRecords.classLength(38 * 60)) // between a 30 and a 45
+    }
+
+    @Test fun summaryComparesWithTheLastRideOfTheSameLength() {
+        val rides = listOf(
+            RideSummary(30L, 2700, 170, 460, 200), // 45 min
+            RideSummary(20L, 1810, 160, 290, 190), // 30 min
+            RideSummary(10L, 1790, 150, 270, 180), // 30 min
+        )
+        val ride = RideSummary(40L, 1820, 175, 318, 210)
+        assertEquals(20L, PersonalRecords.previousSimilar(rides, ride)!!.startedAt)
+        assertNull(PersonalRecords.previousSimilar(rides, RideSummary(40L, 600, 150, 90, null)))
+    }
+
+    @Test fun checkpointKeepsRecordsAndGraph() {
+        val a = RideTracker(ftp = { 200 })
+        var sec = 0
+        repeat(400) { a.onSample(sec++ * 1000L, BikeSample(210f, 90f, 40f, 20f)) }
+        val saved = CheckpointJson.decode(CheckpointJson.encode(a.checkpoint(sec * 1000L, Boot)!!))!!
+        var got: Pair<RideSummary, RideDetail>? = null
+        val b = RideTracker(ftp = { 200 }, onRideFinished = { r, d -> got = r to d })
+        assertTrue(b.resume(saved, sec * 1000L + 1_000, Boot))
+        repeat(100) { b.onSample(sec++ * 1000L + 1_000, BikeSample(210f, 90f, 40f, 20f)) }
+        b.finish()
+        assertEquals(210, got!!.first.bestEfforts[300])
+        assertTrue(got!!.second.powerEvery5s.size >= 99)
+        assertTrue(got!!.first.zoneSeconds!![3] > 400)
     }
 
     // ------------------------------------------------------------------ feed

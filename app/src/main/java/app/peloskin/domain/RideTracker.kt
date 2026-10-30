@@ -1,5 +1,6 @@
 package app.peloskin.domain
 
+import kotlin.math.ceil
 
 /** What the skin draws, recomputed on every sample. */
 data class RideSnapshot(
@@ -21,7 +22,35 @@ data class RideSnapshot(
     val elapsedSec: Int = 0,
     /** Best 20-minute average power so far, once the ride is 20 minutes long. */
     val best20Watts: Float? = null,
+    /** Best average watts this ride for each of [PersonalRecords.EffortWindows] reached so far. */
+    val bestEfforts: Map<Int, Int> = emptyMap(),
 )
+
+/** A finished ride, as kept in history. */
+data class RideSummary(
+    val startedAt: Long,
+    val durationSec: Int,
+    val avgPower: Int,
+    val totalKj: Int,
+    val best20Watts: Int?,
+    val avgCadence: Int = 0,
+    val avgResistance: Int = 0,
+    val distanceMi: Float = 0f,
+    val calories: Int = 0,
+    /** Best average watts by effort length in seconds. */
+    val bestEfforts: Map<Int, Int> = emptyMap(),
+    /** Seconds in each of the 7 power zones, if the rider had an FTP. */
+    val zoneSeconds: List<Int>? = null,
+    /** The FTP the zones were worked out with. */
+    val ftp: Int? = null,
+)
+
+/** The bulky part of a ride, kept in its own file: average output for each 5 seconds. */
+data class RideDetail(val startedAt: Long, val powerEvery5s: List<Int>) {
+    companion object {
+        const val StepSec = 5
+    }
+}
 
 /** Everything [RideTracker] needs to pick a ride back up. */
 class RideCheckpoint(
@@ -33,14 +62,11 @@ class RideCheckpoint(
     val energyJ: Double, val distanceMi: Double,
     val bestPower: Float, val bestCadence: Float, val bestResistance: Float,
     val seconds: Int, val best20: Double?, val ring: DoubleArray,
-)
-
-data class RideSummary(
-    val startedAt: Long,
-    val durationSec: Int,
-    val avgPower: Int,
-    val totalKj: Int,
-    val best20Watts: Int?,
+    val efforts: DoubleArray = DoubleArray(PersonalRecords.EffortWindows.size) { -1.0 },
+    val graph: IntArray = IntArray(0),
+    val zones: IntArray = IntArray(PowerZones.Count),
+    val pendingIdle: Int = 0,
+    val ftp: Int? = null,
 )
 
 /**
@@ -49,13 +75,15 @@ data class RideSummary(
  * the next ride starts.
  *
  * `now` values passed in must come from a monotonic clock (SystemClock.elapsedRealtime);
- * [wallClock] is only used to timestamp the ride for history.
+ * [wallClock] is only used to timestamp the ride for history. [ftp] gives the current
+ * rider's FTP, for time in zones.
  */
 class RideTracker(
     private val idleEndMs: Long = 5 * 60_000L,
     private val minRideSec: Int = 5 * 60,
     private val wallClock: () -> Long = System::currentTimeMillis,
-    private val onRideFinished: (RideSummary) -> Unit = {},
+    private val ftp: () -> Int? = { null },
+    private val onRideFinished: (RideSummary, RideDetail) -> Unit = { _, _ -> },
 ) {
     var snapshot = RideSnapshot()
         private set
@@ -75,11 +103,20 @@ class RideTracker(
     private var bestCadence = 0f
     private var bestResistance = 0f
 
-    // Cumulative energy at each whole second, in a ring big enough for one 20-minute
+    // Cumulative energy at each whole second, in a ring big enough for the longest effort
     // window, so a long ride doesn't keep growing memory.
     private val ring = DoubleArray(RingSize)
     private var seconds = 0
     private var best20: Double? = null
+    private val efforts = DoubleArray(Windows.size) { -1.0 }
+
+    private val graph = ArrayList<Int>()
+    private val zones = IntArray(PowerZones.Count)
+    // Seconds spent not pedaling. They count toward zone 1 once you pedal again; if the
+    // ride ends first, they were the idle tail and are dropped.
+    private var pendingIdle = 0
+    private var pedaledThisSecond = false
+    private var zonesFtp: Int? = null
 
     fun onSample(now: Long, sample: BikeSample) {
         val power = sample.power.coerceAtLeast(0f)
@@ -111,6 +148,7 @@ class RideTracker(
             powerSum += power * dt
             cadenceSum += cadence * dt
             resistanceSum += resistance * dt
+            pedaledThisSecond = true
         }
         bestPower = maxOf(bestPower, power)
         bestCadence = maxOf(bestCadence, cadence)
@@ -118,10 +156,7 @@ class RideTracker(
 
         while (seconds <= elapsed.toInt()) {
             ring[seconds % ring.size] = energyJ
-            if (seconds >= Window) {
-                val avg = (energyJ - ring[(seconds - Window) % ring.size]) / Window
-                if (best20 == null || avg > best20!!) best20 = avg
-            }
+            if (seconds > 0) onSecond(seconds)
             seconds++
         }
 
@@ -142,8 +177,40 @@ class RideTracker(
             calories = (energyJ / JoulesPerKcal / Efficiency).toFloat(),
             elapsedSec = elapsedAtLastPedal.toInt(),
             best20Watts = best20?.toFloat(),
+            bestEfforts = currentEfforts(),
         )
     }
+
+    /** Called once for each whole second of the ride, with the ring filled up to [s]. */
+    private fun onSecond(s: Int) {
+        fun energyAt(sec: Int) = ring[sec % ring.size]
+        Windows.forEachIndexed { i, w ->
+            if (s >= w) {
+                val avg = (energyAt(s) - energyAt(s - w)) / w
+                if (avg > efforts[i]) efforts[i] = avg
+            }
+        }
+        if (s >= Window20) best20 = efforts[Windows.indexOf(Window20)]
+        if (s % RideDetail.StepSec == 0) {
+            graph += ((energyAt(s) - energyAt(s - RideDetail.StepSec)) / RideDetail.StepSec).toInt()
+        }
+        val rider = ftp()?.takeIf { it > 0 }
+        if (rider != null) {
+            zonesFtp = rider
+            if (pedaledThisSecond) {
+                zones[0] += pendingIdle
+                pendingIdle = 0
+                val watts = (energyAt(s) - energyAt(s - 1)).toFloat()
+                zones[PowerZones.zone(watts, rider) - 1]++
+            } else {
+                pendingIdle++
+            }
+        }
+        pedaledThisSecond = false
+    }
+
+    private fun currentEfforts(): Map<Int, Int> =
+        Windows.indices.filter { efforts[it] >= 0 }.associate { Windows[it] to efforts[it].toInt() }
 
     /** Call periodically so a ride still ends if the feed stops entirely. */
     fun tick(now: Long) {
@@ -159,16 +226,15 @@ class RideTracker(
         if (!snapshot.riding) return
         snapshot = snapshot.copy(riding = false)
         // Only time spent pedaling counts, so a bump of the pedals is never a ride.
-        if (moving >= minRideSec) onRideFinished(summary())
+        if (moving >= minRideSec) onRideFinished(summary(), detail())
     }
 
-    private fun summary() = RideSummary(
-        startedAt = startedAt,
-        durationSec = elapsedAtLastPedal.toInt(),
-        avgPower = avg(powerSum).toInt(),
-        totalKj = (energyJ / 1000).toInt(),
-        best20Watts = best20?.toInt(),
+    private fun summary() = buildSummary(
+        startedAt, elapsedAtLastPedal, moving, powerSum, cadenceSum, resistanceSum, energyJ, distanceMi,
+        efforts, zones, zonesFtp,
     )
+
+    private fun detail() = RideDetail(startedAt, trimGraph(graph, elapsedAtLastPedal))
 
     private fun begin(now: Long) {
         startedAt = wallClock()
@@ -180,6 +246,12 @@ class RideTracker(
         bestPower = 0f; bestCadence = 0f; bestResistance = 0f
         seconds = 0
         best20 = null
+        efforts.fill(-1.0)
+        graph.clear()
+        zones.fill(0)
+        pendingIdle = 0
+        pedaledThisSecond = false
+        zonesFtp = null
         snapshot = RideSnapshot(riding = true)
     }
 
@@ -201,6 +273,8 @@ class RideTracker(
             energyJ = energyJ, distanceMi = distanceMi,
             bestPower = bestPower, bestCadence = bestCadence, bestResistance = bestResistance,
             seconds = seconds, best20 = best20, ring = ring.copyOf(),
+            efforts = efforts.copyOf(), graph = graph.toIntArray(), zones = zones.copyOf(),
+            pendingIdle = pendingIdle, ftp = zonesFtp,
         )
     }
 
@@ -210,7 +284,8 @@ class RideTracker(
      */
     fun resume(c: RideCheckpoint, now: Long, bootId: Int): Boolean {
         val sameBoot = c.bootId == bootId && c.savedAt <= now
-        if (!sameBoot || now - c.lastPedalAt >= idleEndMs || c.ring.size != ring.size) return false
+        val shapeOk = c.ring.size == ring.size && c.efforts.size == efforts.size && c.zones.size == zones.size
+        if (!sameBoot || now - c.lastPedalAt >= idleEndMs || !shapeOk) return false
         startedAt = c.startedAt
         lastSampleAt = NoSample
         lastPedalAt = c.lastPedalAt
@@ -221,6 +296,12 @@ class RideTracker(
         seconds = c.seconds
         best20 = c.best20
         c.ring.copyInto(ring)
+        c.efforts.copyInto(efforts)
+        graph.clear(); graph.addAll(c.graph.toList())
+        c.zones.copyInto(zones)
+        pendingIdle = c.pendingIdle
+        pedaledThisSecond = false
+        zonesFtp = c.ftp
         snapshot = RideSnapshot(
             riding = true,
             avgPower = avg(powerSum), avgCadence = avg(cadenceSum), avgResistance = avg(resistanceSum),
@@ -228,26 +309,54 @@ class RideTracker(
             totalKj = (energyJ / 1000).toFloat(), distanceMi = distanceMi.toFloat(),
             calories = (energyJ / JoulesPerKcal / Efficiency).toFloat(),
             elapsedSec = elapsedAtLastPedal.toInt(), best20Watts = best20?.toFloat(),
+            bestEfforts = currentEfforts(),
         )
         return true
     }
 
     companion object {
-        /** Length of the rolling window for best 20 minutes, plus one, in seconds. */
+        /** Longest effort window, plus one, in seconds. */
         const val RingSize = 20 * 60 + 1
 
         /** The finished ride a checkpoint describes, or null if it's too short to keep. */
-        fun summaryOf(c: RideCheckpoint, minRideSec: Int = 5 * 60): RideSummary? {
+        fun summaryOf(c: RideCheckpoint, minRideSec: Int = 5 * 60): Pair<RideSummary, RideDetail>? {
             if (c.moving < minRideSec) return null
+            val summary = buildSummary(
+                c.startedAt, c.elapsedAtLastPedal, c.moving, c.powerSum, c.cadenceSum, c.resistanceSum,
+                c.energyJ, c.distanceMi, c.efforts, c.zones, c.ftp,
+            )
+            return summary to RideDetail(c.startedAt, trimGraph(c.graph.toList(), c.elapsedAtLastPedal))
+        }
+
+        private fun buildSummary(
+            startedAt: Long, elapsedAtLastPedal: Double, moving: Double,
+            powerSum: Double, cadenceSum: Double, resistanceSum: Double, energyJ: Double, distanceMi: Double,
+            efforts: DoubleArray, zones: IntArray, zonesFtp: Int?,
+        ): RideSummary {
+            fun avg(sum: Double) = if (moving > 0) (sum / moving).toInt() else 0
+            val bests = Windows.indices.filter { efforts[it] >= 0 }.associate { Windows[it] to efforts[it].toInt() }
             return RideSummary(
-                startedAt = c.startedAt,
-                durationSec = c.elapsedAtLastPedal.toInt(),
-                avgPower = (c.powerSum / c.moving).toInt(),
-                totalKj = (c.energyJ / 1000).toInt(),
-                best20Watts = c.best20?.toInt(),
+                startedAt = startedAt,
+                durationSec = elapsedAtLastPedal.toInt(),
+                avgPower = avg(powerSum),
+                totalKj = (energyJ / 1000).toInt(),
+                best20Watts = bests[Window20],
+                avgCadence = avg(cadenceSum),
+                avgResistance = avg(resistanceSum),
+                distanceMi = distanceMi.toFloat(),
+                calories = (energyJ / JoulesPerKcal / Efficiency).toInt(),
+                bestEfforts = bests,
+                zoneSeconds = zones.toList().takeIf { zonesFtp != null && it.sum() > 0 },
+                ftp = zonesFtp,
             )
         }
-        private const val Window = 20 * 60
+
+        /** Drops the graph points from the idle minutes after the last pedal stroke. */
+        private fun trimGraph(graph: List<Int>, elapsedAtLastPedal: Double): List<Int> =
+            graph.take(ceil(elapsedAtLastPedal / RideDetail.StepSec).toInt())
+
+        private val Windows = PersonalRecords.EffortWindows
+        private const val Window20 = 20 * 60
         private const val NoSample = Long.MIN_VALUE
         // Standard estimate: mechanical work over ~22% body efficiency.
         private const val JoulesPerKcal = 4184.0

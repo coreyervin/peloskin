@@ -26,18 +26,26 @@ enum class CompactMetric(val label: String) {
     Calories("Calories"),
 }
 
+/** Everything PeloSkin remembers. Riders have their own FTP and history; layout is shared. */
 data class Settings(
-    val ftp: Int? = null,
-    val ftpSource: FtpSource = FtpSource.Manual,
-    val ftpSetAt: Long = 0L,
-    val autoFtp: Boolean = true,
+    val profiles: List<Profile> = listOf(Profile.first()),
+    val activeProfileId: String = Profile.FirstId,
     val startMode: SkinMode = SkinMode.Full,
     val compactEdge: CompactEdge = CompactEdge.Bottom,
     val compactMetrics: List<CompactMetric> = DefaultCompactMetrics,
     val startOnBoot: Boolean = true,
     val units: Units = Units.Imperial,
-    val rides: List<RideSummary> = emptyList(),
 ) {
+    /** The rider on the bike now. Falls back to the first rider if the id is stale. */
+    val active: Profile
+        get() = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.first()
+
+    /** Changes the active rider. */
+    fun withActive(change: (Profile) -> Profile): Settings {
+        val id = active.id
+        return copy(profiles = profiles.map { if (it.id == id) change(it) else it })
+    }
+
     companion object {
         val DefaultCompactMetrics = listOf(
             CompactMetric.Cadence, CompactMetric.Output, CompactMetric.Resistance,

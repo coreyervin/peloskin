@@ -84,8 +84,11 @@ data class SkinState(
     val ride: RideSnapshot,
     val feed: FeedStatus,
     val ftp: Int?,
-    val ftpBanner: Int?,
+    /** A short message: a new FTP, a new PR, or who's riding now. */
+    val banner: String?,
     val units: Units = Units.Imperial,
+    /** Who's riding, when there's more than one rider. */
+    val riderName: String? = null,
 )
 
 private fun SkinState.live() = feed == FeedStatus.Connected
@@ -105,7 +108,7 @@ private fun Label(text: String, s: Scale, size: Float = 0.78f, color: Color = In
 
 /** Tap anywhere on it to switch to the single-line bar. */
 @Composable
-fun FullSkin(state: SkinState, onToggle: () -> Unit) {
+fun FullSkin(state: SkinState, onToggle: () -> Unit, onNextRider: () -> Unit = {}) {
     val s = rememberScale()
     val live = state.live()
     val r = state.ride
@@ -134,10 +137,8 @@ fun FullSkin(state: SkinState, onToggle: () -> Unit) {
                 }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().height(s.dp(4.2f)).background(StripBg),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Box(Modifier.fillMaxWidth().height(s.dp(4.2f)).background(StripBg), contentAlignment = Alignment.CenterStart) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
                 StripItem("Speed", "(${state.units.speedLabel})", state.units.speed(r.speedMph).oneDp(live), s)
                 StripDivider(s)
@@ -152,6 +153,24 @@ fun FullSkin(state: SkinState, onToggle: () -> Unit) {
                 StripItem("Calories", "(kcal)", r.calories.whole(live), s)
             }
         }
+        // Tapping the chip switches rider; it takes the tap so the layout doesn't switch too.
+        state.riderName?.let { RiderChip(it, s, onNextRider, Modifier.padding(start = s.dp(1.6f))) }
+        }
+    }
+}
+
+@Composable
+private fun RiderChip(name: String, s: Scale, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(s.dp(1.2f)))
+            .padding(horizontal = s.dp(0.9f), vertical = s.dp(0.45f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(s.dp(0.5f)).background(ZoneOn, CircleShape))
+        Spacer(Modifier.width(s.dp(0.5f)))
+        Label(name, s, size = 0.72f)
     }
 }
 
@@ -182,7 +201,7 @@ private fun FoldButtonView(expanded: Boolean) {
 @Composable
 private fun StatusLine(state: SkinState, s: Scale) {
     val text = when {
-        state.ftpBanner != null -> "New FTP ${state.ftpBanner} · from your best 20 minutes"
+        state.banner != null -> state.banner
         state.feed == FeedStatus.NotFound -> "Can't read the bike · is the sensor cable connected?"
         state.feed == FeedStatus.Unsupported -> "This bike isn't supported yet"
         state.feed == FeedStatus.Connecting -> "Connecting to the bike…"
@@ -190,7 +209,7 @@ private fun StatusLine(state: SkinState, s: Scale) {
     } ?: return
     Text(
         text,
-        color = if (state.ftpBanner != null) Gold else Dim,
+        color = if (state.banner != null) Gold else Dim,
         modifier = Modifier.padding(bottom = s.dp(0.8f)),
         style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = s.sp(0.9f)),
     )
@@ -323,9 +342,9 @@ fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, onToggle: () -> 
                 style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = s.sp(0.9f)),
             )
         } else {
-            state.ftpBanner?.let { ftp ->
+            state.banner?.let { banner ->
                 Text(
-                    "NEW FTP $ftp", color = Gold, modifier = Modifier.padding(horizontal = s.dp(1.1f)),
+                    banner.uppercase(), color = Gold, modifier = Modifier.padding(horizontal = s.dp(1.1f)),
                     style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = s.sp(0.8f), letterSpacing = 0.1.em),
                 )
                 Box(Modifier.width(1.dp).height(s.dp(1.6f)).background(Color(0x2EFFFFFF)))

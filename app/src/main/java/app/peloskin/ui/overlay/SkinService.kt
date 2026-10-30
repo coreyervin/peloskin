@@ -15,11 +15,18 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.LifecycleService
@@ -32,14 +39,18 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import app.peloskin.data.bike.BikeFeed
 import app.peloskin.data.bike.BikeModel
 import app.peloskin.data.bike.FeedStatus
+import app.peloskin.data.store.FinishedRide
 import app.peloskin.data.store.SettingsStore
 import app.peloskin.domain.BikeSample
 import app.peloskin.domain.CompactEdge
+import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.RideSnapshot
 import app.peloskin.domain.RideTracker
 import app.peloskin.domain.SkinMode
 import app.peloskin.ui.settings.MainActivity
+import app.peloskin.ui.summary.RideSummaryCard
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,11 +94,16 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
 
     private lateinit var feed: BikeFeed
     private val ride = MutableStateFlow(RideSnapshot())
-    private val tracker = RideTracker(onRideFinished = { ride ->
-        // Demo rides are made up, so they stay out of history and never set FTP.
-        if (!(::feed.isInitialized && feed.demoActive.value)) SettingsStore.recordRide(ride)
-    })
+    private val tracker = RideTracker(
+        ftp = { SettingsStore.settings.value.active.ftp },
+        onRideFinished = { ride, detail ->
+            // Demo rides are made up: they get a summary but stay out of history, FTP and PRs.
+            if (rideIsDemo) SettingsStore.showDemoSummary(ride, detail)
+            else SettingsStore.recordRide(ride, detail)
+        },
+    )
     private val mode = MutableStateFlow(SkinMode.Full)
+    private var rideIsDemo = false
 
     override fun onCreate() {
         savedState.performRestore(null)
@@ -110,7 +126,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             if (tracker.resume(saved, SystemClock.elapsedRealtime(), bootId())) {
                 ride.value = tracker.snapshot
             } else {
-                RideTracker.summaryOf(saved)?.let { SettingsStore.recordRide(it) }
+                RideTracker.summaryOf(saved)?.let { (ride, detail) -> SettingsStore.recordRide(ride, detail) }
                 SettingsStore.saveCheckpoint(null)
             }
         }
@@ -126,7 +142,12 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         lifecycleScope.launch {
             feed.samples.collect {
                 lastSampleAt = SystemClock.elapsedRealtime()
+                val wasRiding = tracker.snapshot.riding
                 tracker.onSample(lastSampleAt, it)
+                // A ride with any demo readings in it is a demo ride, even if the demo is
+                // turned off before the ride ends.
+                if (!wasRiding && tracker.snapshot.riding) rideIsDemo = false
+                if (feed.demoActive.value) rideIsDemo = true
                 window.add(it)
             }
         }
@@ -155,8 +176,30 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         }
         lifecycleScope.launch {
             // A newer banner restarts the 15 seconds.
-            SettingsStore.ftpBanner.collectLatest {
-                if (it != null) { delay(15_000); SettingsStore.clearBanner() }
+            SettingsStore.banner.collectLatest {
+                if (it != null) { delay(12_000); SettingsStore.clearBanner() }
+            }
+        }
+        lifecycleScope.launch {
+            // Call out a personal best the moment it's beaten, once per effort length per ride.
+            val announced = mutableSetOf<Int>()
+            var wasRiding = false
+            ride.collect { r ->
+                if (r.riding && !wasRiding) announced.clear()
+                wasRiding = r.riding
+                if (!r.riding || feed.demoActive.value) return@collect
+                val records = SettingsStore.settings.value.active.records.efforts
+                for ((seconds, watts) in r.bestEfforts) {
+                    val best = records[seconds] ?: continue
+                    if (watts > best.value && announced.add(seconds)) {
+                        SettingsStore.showBanner("New ${PersonalRecords.effortLabel(seconds)} PR · $watts W")
+                    }
+                }
+            }
+        }
+        lifecycleScope.launch {
+            SettingsStore.lastFinished.collect { finished ->
+                if (finished != null) showSummary(finished) else hideSummary()
             }
         }
         lifecycleScope.launch {
@@ -179,6 +222,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             SettingsStore.saveCheckpoint(null)
         }
         removeWindows()
+        hideSummary()
         if (::feed.isInitialized) feed.stop()
         _running.value = false
         super.onDestroy()
@@ -211,7 +255,9 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             width = LayoutParams.MATCH_PARENT
             gravity = Gravity.BOTTOM
         }
-        add(composeView { FullSkin(skinState(), onToggle = { mode.value = SkinMode.Compact }) }, display)
+        add(composeView {
+            FullSkin(skinState(), onToggle = { mode.value = SkinMode.Compact }, onNextRider = SettingsStore::nextProfile)
+        }, display)
     }
 
     private fun showCompact() {
@@ -273,8 +319,13 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         val r by ride.collectAsState()
         val f by feed.status.collectAsState()
         val settings by SettingsStore.settings.collectAsState()
-        val banner by SettingsStore.ftpBanner.collectAsState()
-        return SkinState(r, f, settings.ftp, banner, settings.units)
+        val banner by SettingsStore.banner.collectAsState()
+        val active = settings.active
+        return SkinState(
+            ride = r, feed = f, ftp = active.ftp, banner = banner, units = settings.units,
+            // The rider chip only appears once there's more than one rider.
+            riderName = active.name.takeIf { settings.profiles.size > 1 },
+        )
     }
 
     private fun composeView(content: @androidx.compose.runtime.Composable () -> Unit) =
@@ -292,6 +343,41 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
     private fun removeWindows() {
         attached.forEach { runCatching { windows.removeView(it) } }
         attached.clear()
+    }
+
+    // ------------------------------------------------------------ ride summary
+
+    private var summaryView: View? = null
+    private var summaryTimeout: Job? = null
+
+    /** The after-ride card, over the whole screen. Tap anywhere to close it. */
+    private fun showSummary(finished: FinishedRide) {
+        hideSummary()
+        val params = baseParams().apply {
+            width = LayoutParams.MATCH_PARENT
+            height = LayoutParams.MATCH_PARENT
+        }
+        val view = composeView {
+            val settings by SettingsStore.settings.collectAsState()
+            Box(
+                Modifier.fillMaxSize().background(Color(0xCC000000))
+                    .clickable(remember { MutableInteractionSource() }, null) { SettingsStore.dismissSummary() },
+                contentAlignment = Alignment.Center,
+            ) {
+                RideSummaryCard(finished, settings.units, footer = "Tap anywhere to close")
+            }
+        }
+        windows.addView(view, params)
+        summaryView = view
+        // Nobody's watching after a few minutes; don't leave it over the next class.
+        summaryTimeout = lifecycleScope.launch { delay(5 * 60_000L); SettingsStore.dismissSummary() }
+    }
+
+    private fun hideSummary() {
+        summaryTimeout?.cancel()
+        summaryTimeout = null
+        summaryView?.let { runCatching { windows.removeView(it) } }
+        summaryView = null
     }
 
     // ----------------------------------------------------------- notification

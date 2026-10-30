@@ -32,6 +32,21 @@ A light clean architecture, one Gradle module. Dependencies only point inward:
 There's no DI framework and no per-action use-case classes; the app is small enough that
 they'd be ceremony. Keep it that way unless it grows a lot.
 
+## Riders, rides and records
+
+- `Settings.profiles` holds each rider (`Profile`): FTP, rides (newest first, max 100) and
+  `Records`. Layout and units are shared. `Settings.active` is the rider on the bike.
+- A finished ride is recorded for whoever is active when it ends (`SettingsStore.recordRide`).
+  That also updates records (`PersonalRecords.apply`), may raise FTP, saves the ride's output
+  graph (`RideDetail`, one JSON file per ride under `rides/<profileId>/`), and sets
+  `lastFinished` for the summary card.
+- Records: best average watts over 5 s, 1, 5 and 20 min, and best total kJ per class length
+  (a ride within 15% of 5/10/15/20/30/45/60/75/90/120 min). Only records that beat an earlier
+  one are announced; a rider's first ride doesn't fill the screen with "PR"s.
+- The settings file is version 2. Version 1 (single rider, FTP and rides at the top level) is
+  read as one profile. Keep `SettingsJson` able to read every older version.
+- Demo rides show a summary but are never recorded.
+
 ## Bike models
 
 Code is organized by bike model under `data/bike/`:
