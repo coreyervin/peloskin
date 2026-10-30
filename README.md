@@ -38,6 +38,7 @@ use [Grupetto](https://github.com/doudar/grupetto). That's what it's built for.
 |---|---|
 | **Full layout** | Cadence, Output and Resistance in big numbers, each with AVG (green ▲ or red ▼ trend arrow) and BEST. Below them is a solid strip with speed, distance, total output (kJ) and calories. |
 | **Tap to switch** | Tap anywhere on the skin to switch between the full layout and a single-line bar, and tap the bar to switch back. |
+| **Hold to end ride** | Press and hold the skin to end your ride and see its summary straight away. There's also an **End ride** button in settings. |
 | **Single-line bar** | One thin line with the numbers you pick. Drag it to the top or bottom edge, and it stays there. |
 | **mph or km/h** | Pick miles or kilometres in settings. Speed and distance follow, and the choice is kept and backed up. |
 | **Power zones** | A 7-zone bar with your % of FTP, using Peloton's zone boundaries. |
@@ -86,8 +87,8 @@ Peloton's older sensor app if the service doesn't answer.
 | Power zone | Current output ÷ FTP, using Peloton's 7 zones (55 / 75 / 90 / 105 / 120 / 150%) |
 | FTP | 95% of your best rolling 20-minute average |
 
-A ride starts when you start pedaling and ends after 5 minutes without pedaling, or when you
-tap **Stop**. Idle minutes aren't counted, and rides with less than 5 minutes of pedaling
+A ride starts when you start pedaling and ends after 5 minutes without pedaling, when you hold
+the skin to end it, or when you tap **End ride** or **Stop** in settings. Idle minutes aren't counted, and rides with less than 5 minutes of pedaling
 aren't saved. If the bike is switched off mid-ride, the ride is saved the next time PeloSkin
 starts.
 
@@ -125,8 +126,12 @@ can run at once, but Grupetto's own overlay will show as well.
 - **Move the single-line bar:** drag it to the top or bottom edge.
 - **Open settings:** tap the **PeloSkin** icon in your app drawer (a dark tile with teal bars).
   Long-press it to put it on the home screen.
-- **Turn it off:** open PeloSkin and tap **Stop**. Leaving the settings screen doesn't stop the
-  skin.
+- **End a ride:** press and hold the skin (either layout). A gold *Hold to end ride* bar fills
+  over about 1.5 seconds; let go early to cancel. The ride is saved and its summary comes up right
+  away. You can also tap **End ride** in settings. Either way the skin keeps running, and the
+  next ride starts once you've stopped pedaling and start again.
+- **Turn it off:** open PeloSkin and tap **Stop**. That also ends the ride in progress. Leaving
+  the settings screen doesn't stop the skin.
 - **Add a rider:** in settings under *Riders*, type a name and tap **Add rider**. With more than
   one rider, a bubble with the rider's initials appears at the left of the full layout's bottom
   strip and at the start of the single-line bar; tap it to switch. A ride

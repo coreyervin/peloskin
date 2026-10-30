@@ -91,6 +91,10 @@ class RideTracker(
     var snapshot = RideSnapshot()
         private set
 
+    /** Whether the ride in progress has enough pedaling to be saved if it ended now. */
+    val longEnough: Boolean
+        get() = moving >= minRideSec
+
     private var startedAt = 0L
     private var lastSampleAt = NoSample
     private var lastPedalAt = 0L
@@ -119,6 +123,7 @@ class RideTracker(
     private val watts = IntList()
     private val pedaled = BoolList()
     private var partialPedaled = false
+    private var waitForStop = false
 
     fun onSample(now: Long, sample: BikeSample) {
         val power = sample.power.coerceAtLeast(0f)
@@ -128,7 +133,10 @@ class RideTracker(
         val pedaling = cadence > 0f
 
         if (snapshot.riding) checkIdle(now)
-        if (!snapshot.riding && pedaling) begin(now)
+        // After you end a ride yourself, wait until you've stopped pedaling before counting a
+        // new one, so a cool-down spin doesn't start a ride straight away.
+        if (!pedaling) waitForStop = false
+        if (!snapshot.riding && pedaling && !waitForStop) begin(now)
 
         if (!snapshot.riding) {
             // Between rides: show live numbers, keep the last ride's totals.
@@ -219,9 +227,13 @@ class RideTracker(
         if (now - lastPedalAt >= idleEndMs) finish()
     }
 
-    /** Ends the ride now, recording it if it's long enough (for example, when the skin is stopped). */
-    fun finish() {
+    /**
+     * Ends the ride now, recording it if it's long enough (for example, when the skin is stopped).
+     * [byRider] is true when you ended it yourself, while you might still be pedaling.
+     */
+    fun finish(byRider: Boolean = false) {
         if (!snapshot.riding) return
+        if (byRider) waitForStop = true
         snapshot = snapshot.copy(riding = false)
         // Only time spent pedaling counts, so a bump of the pedals is never a ride.
         if (moving >= minRideSec) {

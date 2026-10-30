@@ -56,6 +56,7 @@ import app.peloskin.ui.summary.RideSummaryCard
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -76,6 +77,15 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         private val _feedStatus = MutableStateFlow(FeedStatus.Connecting)
         /** Bike connection, for the settings screen. */
         val feedStatus: StateFlow<FeedStatus> = _feedStatus
+
+        private val _riding = MutableStateFlow(false)
+        /** Whether a ride is in progress, for the settings screen's End ride button. */
+        val riding: StateFlow<Boolean> = _riding
+
+        private val endRideRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+        /** Ends the ride in progress, if the skin is running. */
+        fun requestEndRide() { endRideRequests.tryEmit(Unit) }
 
         private val _feedSource = MutableStateFlow<String?>(null)
         /** Which Peloton service the numbers come from, for the settings screen. */
@@ -179,6 +189,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                 if (++ticks % 6 == 0) saveCheckpoint(now)
             }
         }
+        lifecycleScope.launch { endRideRequests.collect { endRide() } }
         lifecycleScope.launch {
             // A newer banner restarts the 12 seconds.
             SettingsStore.banner.collectLatest {
@@ -196,6 +207,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             }
             var wasRiding = resumed.riding
             ride.collect { r ->
+                _riding.value = r.riding
                 if (r.riding && !wasRiding) {
                     announced.clear()
                     // Pedaling into the next class: the last ride's summary has had its moment.
@@ -232,10 +244,20 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun saveCheckpoint(now: Long) = SettingsStore.saveCheckpoint(tracker.checkpoint(now, bootId()))
 
+    /** Ends the ride now: it's saved and its summary comes up, and the skin keeps running. */
+    private fun endRide() {
+        if (!tracker.snapshot.riding) return
+        if (!tracker.longEnough) SettingsStore.showBanner("Ride ended · under 5 minutes of pedaling, so it isn't saved")
+        tracker.finish(byRider = true)
+        ride.value = tracker.snapshot.copy(power = ride.value.power, cadence = ride.value.cadence, speedMph = ride.value.speedMph)
+        SettingsStore.saveCheckpoint(null)
+    }
+
     /** Changes every time the tablet boots, so a checkpoint from an earlier boot is spotted. */
     private fun bootId() = Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
 
     override fun onDestroy() {
+        _riding.value = false
         if (_running.value) {
             // Stopping the skin ends the ride, so it's saved now rather than lost.
             tracker.finish()
@@ -278,7 +300,10 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             gravity = Gravity.BOTTOM
         }
         add(composeView {
-            FullSkin(skinState(), onToggle = { mode.value = SkinMode.Compact }, onNextRider = SettingsStore::nextProfile)
+            FullSkin(
+                skinState(), onToggle = { mode.value = SkinMode.Compact },
+                onNextRider = SettingsStore::nextProfile, onEndRide = ::endRide,
+            )
         }, display)
     }
 
@@ -324,6 +349,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                     metrics = settings.compactMetrics,
                     onToggle = { mode.value = SkinMode.Full },
                     onNextRider = SettingsStore::nextProfile,
+                    onEndRide = ::endRide,
                     modifier = Modifier.onSizeChanged { size ->
                         if (params.width != size.width || params.height != size.height) {
                             params.width = size.width

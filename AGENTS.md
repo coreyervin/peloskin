@@ -49,6 +49,9 @@ they'd be ceremony. Keep it that way unless it grows a lot.
 - The settings file is version 2. Version 1 (single rider, FTP and rides at the top level) is
   read as one profile. Keep `SettingsJson` able to read every older version.
 - Demo rides show a summary but are never recorded.
+- A rider ends a ride by holding the skin (`tapOrHold` in `SkinUi`) or with *End ride* in
+  settings (`SkinService.requestEndRide`). Both call `RideTracker.finish(byRider = true)`,
+  which waits for pedaling to stop before a new ride can start.
 
 ## Bike models
 

@@ -142,6 +142,7 @@ class MainActivity : ComponentActivity() {
     private fun Screen() {
         val settings by SettingsStore.settings.collectAsState()
         val running by SkinService.running.collectAsState()
+        val riding by SkinService.riding.collectAsState()
         val feed by SkinService.feedStatus.collectAsState()
         val source by SkinService.feedSource.collectAsState()
         val demo by SettingsStore.demoRide.collectAsState()
@@ -188,6 +189,11 @@ class MainActivity : ComponentActivity() {
                                         color = if (feed == FeedStatus.Connected || feed == FeedStatus.Connecting) Muted else Warn,
                                         style = bodyStyle,
                                     )
+                                }
+                                // Ends the ride without turning the skin off; Stop does both.
+                                if (running && riding) {
+                                    GhostButton(onClick = { SkinService.requestEndRide() }) { Text("End ride") }
+                                    Spacer(Modifier.width(12.dp))
                                 }
                                 if (running) GhostButton(onClick = { SkinService.stop(this@MainActivity) }) { Text("Stop") }
                                 else Button(

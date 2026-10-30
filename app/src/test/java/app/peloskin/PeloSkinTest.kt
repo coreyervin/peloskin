@@ -588,4 +588,29 @@ class PeloSkinTest {
         assertEquals("MA", Profile("a", "mary ann lee").initials)
         assertEquals("?", Profile("a", "   ").initials)
     }
+
+    @Test fun endingARideWaitsForYouToStopBeforeTheNextOne() {
+        val finished = mutableListOf<RideSummary>()
+        val t = RideTracker(onRideFinished = { r, _ -> finished += r })
+        var sec = 0
+        repeat(400) { t.onSample(sec++ * 1000L, BikeSample(180f, 88f, 40f, 19f)) }
+        t.finish(byRider = true)
+        assertEquals(1, finished.size)
+        // Still spinning in the cool-down: no new ride yet.
+        repeat(60) { t.onSample(sec++ * 1000L, BikeSample(80f, 70f, 25f, 12f)) }
+        assertEquals(false, t.snapshot.riding)
+        assertEquals(80f, t.snapshot.power, 0f) // live numbers still show
+        // Stop, then pedal again: that's a new ride.
+        t.onSample(sec++ * 1000L, BikeSample(0f, 0f, 25f, 0f))
+        t.onSample(sec++ * 1000L, BikeSample(150f, 85f, 30f, 17f))
+        assertTrue(t.snapshot.riding)
+    }
+
+    @Test fun onlyRidesWithFiveMinutesOfPedalingAreLongEnough() {
+        val t = RideTracker()
+        repeat(200) { t.onSample(it * 1000L, BikeSample(150f, 85f, 30f, 17f)) }
+        assertEquals(false, t.longEnough)
+        repeat(200) { t.onSample((200 + it) * 1000L, BikeSample(150f, 85f, 30f, 17f)) }
+        assertTrue(t.longEnough)
+    }
 }

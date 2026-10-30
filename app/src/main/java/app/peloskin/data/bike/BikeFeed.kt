@@ -130,6 +130,8 @@ class BikeFeed(
         _demoActive.value = true
         _status.value = FeedStatus.Connected
         var t = 0.0
+        // Starts from a standstill, like getting on the bike, so a demo can follow an ended ride.
+        _samples.tryEmit(BikeMath.sample(0f, 0f, 25f))
         while (demo()) {
             val base = when {
                 t < 300 -> 90 + t / 300 * 60

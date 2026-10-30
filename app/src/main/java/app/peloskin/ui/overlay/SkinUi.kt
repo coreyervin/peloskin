@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +20,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -28,6 +32,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -46,6 +51,9 @@ import app.peloskin.domain.PowerZones
 import app.peloskin.domain.RideSnapshot
 import app.peloskin.domain.Units
 import kotlin.math.roundToInt
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 val Figtree = FontFamily(
     Font(R.font.figtree_light, FontWeight.Light),
@@ -118,14 +126,15 @@ private fun Label(text: String, s: Scale, size: Float = 0.78f, color: Color = In
 
 /** Tap anywhere on it to switch to the single-line bar. */
 @Composable
-fun FullSkin(state: SkinState, onToggle: () -> Unit, onNextRider: () -> Unit = {}) {
+fun FullSkin(state: SkinState, onToggle: () -> Unit, onNextRider: () -> Unit = {}, onEndRide: () -> Unit = {}) {
     val s = rememberScale()
     val live = state.live()
     val r = state.ride
+    val hold = rememberHoldState()
     // AVG and BEST stay up after a ride ends, until the next one starts.
     val stats = live && (r.riding || r.elapsedSec > 0)
     Column(
-        Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = onToggle),
+        Modifier.fillMaxWidth().tapOrHold(hold, enabled = live && r.riding, onTap = onToggle, onHoldDone = onEndRide),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -136,7 +145,7 @@ fun FullSkin(state: SkinState, onToggle: () -> Unit, onNextRider: () -> Unit = {
             contentAlignment = Alignment.BottomCenter,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                StatusLine(state, s)
+                StatusLine(state, hold, s)
                 if (state.ftp != null) ZoneBar(r.power, state.ftp, live, s, Modifier.padding(bottom = s.dp(0.6f)))
                 Row(verticalAlignment = Alignment.Bottom) {
                     MetricColumn("Cadence", r.cadence.whole(live), "rpm", r.avgCadence, r.bestCadence, r.cadence, stats, live && r.riding, s)
@@ -214,7 +223,11 @@ private fun FoldButtonView(expanded: Boolean) {
 }
 
 @Composable
-private fun StatusLine(state: SkinState, s: Scale) {
+private fun StatusLine(state: SkinState, hold: HoldState, s: Scale) {
+    hold.progress?.let {
+        HoldPrompt(it, s, Modifier.padding(bottom = s.dp(0.8f)))
+        return
+    }
     val text = when {
         state.banner != null -> state.banner
         state.feed == FeedStatus.NotFound -> "Can't read the bike · is the sensor cable connected?"
@@ -341,19 +354,24 @@ fun CompactSkin(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
     onNextRider: () -> Unit = {},
+    onEndRide: () -> Unit = {},
 ) {
     val s = rememberScale()
     val live = state.live()
     val r = state.ride
+    val hold = rememberHoldState()
     Row(
         modifier
-            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onToggle)
+            .tapOrHold(hold, enabled = live && r.riding, onTap = onToggle, onHoldDone = onEndRide)
             .background(Color(0xEB181A1F), RoundedCornerShape(s.dp(2.2f)))
             .padding(horizontal = s.dp(1.2f), vertical = s.dp(0.7f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         state.rider?.let { RiderBubble(it, s, diameter = 1.7f, onClick = onNextRider) }
-        if (!live) {
+        val holding = hold.progress
+        if (holding != null) {
+            HoldPrompt(holding, s, Modifier.padding(horizontal = s.dp(1.1f)))
+        } else if (!live) {
             Text(
                 when (state.feed) {
                     FeedStatus.NotFound -> "Can't read the bike"
@@ -405,3 +423,66 @@ private fun CompactItem(name: String, value: String, unit: String, s: Scale, ext
         extra()
     }
 }
+
+// ------------------------------------------------------- hold to end ride
+
+/** How long to hold the skin to end a ride, and how long before the prompt appears. */
+private const val HoldMs = 1_500L
+private const val HoldPromptMs = 300L
+
+class HoldState {
+    /** Progress through the hold, 0 to 1, or null when you aren't holding. */
+    var progress by mutableStateOf<Float?>(null)
+}
+
+@Composable
+fun rememberHoldState() = remember { HoldState() }
+
+/**
+ * A tap calls [onTap]. Holding for [HoldMs] calls [onHoldDone], with [hold] showing progress
+ * once the press outlasts a tap. Letting go early cancels. Holding does nothing unless [enabled].
+ */
+fun Modifier.tapOrHold(hold: HoldState, enabled: Boolean, onTap: () -> Unit, onHoldDone: () -> Unit): Modifier =
+    pointerInput(enabled) {
+        coroutineScope {
+            detectTapGestures(
+                onPress = {
+                    val timer = if (!enabled) null else launch {
+                        delay(HoldPromptMs)
+                        val start = System.nanoTime()
+                        while (true) {
+                            val held = (System.nanoTime() - start) / 1_000_000f + HoldPromptMs
+                            if (held >= HoldMs) {
+                                hold.progress = null
+                                onHoldDone()
+                                break
+                            }
+                            hold.progress = (held - HoldPromptMs) / (HoldMs - HoldPromptMs)
+                            delay(16)
+                        }
+                    }
+                    tryAwaitRelease()
+                    timer?.cancel()
+                    hold.progress = null
+                },
+                // A long press never counts as a tap, so letting go early doesn't switch layouts.
+                onLongPress = {},
+                onTap = { onTap() },
+            )
+        }
+    }
+
+@Composable
+private fun HoldPrompt(progress: Float, s: Scale, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "HOLD TO END RIDE", color = Gold,
+            style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = s.sp(0.8f), letterSpacing = 0.12.em),
+        )
+        Spacer(Modifier.width(s.dp(1f)))
+        Box(Modifier.width(s.dp(12f)).height(s.dp(0.4f)).background(ZoneOff, RoundedCornerShape(s.dp(0.2f)))) {
+            Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(s.dp(0.4f)).background(Gold, RoundedCornerShape(s.dp(0.2f))))
+        }
+    }
+}
+
