@@ -9,19 +9,19 @@
 ![APK size](https://img.shields.io/badge/APK-under%201%20MB-41c7c7)
 ![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)
 
-<img src="docs/demo.gif" alt="PeloSkin over a spin class: the full metrics layout, a tap to shrink it to a single line, switching rider with the picture bubble, then holding the skin to end the ride and the summary card that follows" width="100%">
+<img src="docs/demo.gif" alt="PeloSkin over a spin class: the full layout with heart rate, switching rider with the picture bubble so the heart rate monitor switches too, a tap to shrink it to a single line and back, then holding the skin to end the ride and the summary card with output and heart rate" width="100%">
 
 </div>
 
 Why should your metrics depend on which app is playing your class?
 
 PeloSkin is a metrics skin for the Peloton bike's own tablet. It reads the bike's sensors
-directly and draws Peloton-style numbers over whatever is on the screen. It also keeps each
-rider's FTP, rides and personal records itself, so they stay with the rider whatever app or
-subscription they use.
+directly, connects to each rider's own Bluetooth heart rate monitor, and draws Peloton-style
+numbers over whatever is on the screen. It also keeps each rider's FTP, rides, heart rate and
+personal records itself, so they stay with the rider whatever app or subscription they use.
 
 Ride to the Peloton app with App+, Apple Fitness+ on another screen, a YouTube spin class, or a
-Netflix episode. Your output, zones, records and history look the same and live in one place.
+Netflix episode. Your output, heart rate, zones, records and history look the same and live in one place.
 
 ## Who it's for
 
@@ -68,11 +68,11 @@ what it's built for.
 | **Starts with the bike** | Starts at boot and after updates, and reconnects to the bike's sensors on its own. If Android restarts it mid-ride, the ride carries on. |
 | **One app** | Reads the bike itself, so there's nothing else to install or keep running. |
 
-<img src="docs/full.png" alt="PeloSkin full layout over a spin class: cadence, output and resistance with averages and bests, a power zone bar, the rider's picture, and a strip with speed, distance, total output and calories" width="100%">
+<img src="docs/full.png" alt="PeloSkin full layout over a spin class: cadence, output and resistance with averages and bests, a power zone bar, and a strip with the rider's picture, speed, distance, total output, calories and heart rate with its zone" width="100%">
 
-<img src="docs/compact.png" alt="PeloSkin single-line bar over a spin class, with the rider's picture, cadence, output with zone blocks, resistance, speed and total output" width="100%">
+<img src="docs/compact.png" alt="PeloSkin single-line bar over a spin class, with the rider's picture, cadence, output with zone blocks, resistance, speed, total output and heart rate" width="100%">
 
-<img src="docs/summary.png" alt="PeloSkin ride summary: total output, average output, cadence, distance and calories with changes from the last similar ride, an output graph with the FTP line, time in each power zone, and best 5-second, 1-minute and 5-minute efforts" width="70%">
+<img src="docs/summary.png" alt="PeloSkin ride summary: total output, average output, cadence, distance, calories and average heart rate, an output graph with the FTP line, a heart rate graph, time in each power zone and heart rate zone, and best efforts" width="70%">
 
 ## Supported bikes
 
@@ -191,7 +191,7 @@ can run at once, but Grupetto's own overlay will show as well.
 The settings screen puts the skin's on/off switch first, then *Who's riding* with the selected
 rider's card (FTP, records and rides), then the skin's layout, start-up and backup settings.
 
-<img src="docs/settings.png" alt="PeloSkin settings screen: the skin's status and Start button, the riders as pictures with an add button, the selected rider's card with FTP, personal records and recent rides, and skin settings below" width="100%">
+<img src="docs/settings.png" alt="PeloSkin settings screen: the skin's status, the riders as pictures with an add button, and the selected rider's card with lifetime totals, a connected heart rate monitor, max heart rate and zones, FTP and personal records" width="100%">
 
 ## FTP, the short version
 
