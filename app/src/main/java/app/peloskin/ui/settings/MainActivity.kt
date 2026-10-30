@@ -65,6 +65,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -80,6 +81,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import app.peloskin.R
 import app.peloskin.data.bike.BikeModel
 import app.peloskin.data.bike.FeedStatus
 import app.peloskin.data.store.FinishedRide
@@ -220,8 +222,10 @@ class MainActivity : ComponentActivity() {
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text("PeloSkin", color = Ink, style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 34.sp))
-                    Spacer(Modifier.width(16.dp))
+                    // The wordmark's baseline sits 12/72 of its height above the bottom; the
+                    // subtitle's padding lines it up with that baseline.
+                    Image(painterResource(R.drawable.wordmark), contentDescription = "PeloSkin", modifier = Modifier.height(56.dp))
+                    Spacer(Modifier.width(20.dp))
                     Text("Your ride metrics over any app on the bike.", color = Muted, style = bodyStyle,
                         modifier = Modifier.padding(bottom = 6.dp))
                 }
