@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/wordmark.svg" alt="PeloSkin" width="100%">
+<img src="docs/wordmark.svg" alt="PeloSkin" width="40%">
 
 **Your ride metrics and rider profiles on your Peloton bike's screen, over any app you ride to.**
 
