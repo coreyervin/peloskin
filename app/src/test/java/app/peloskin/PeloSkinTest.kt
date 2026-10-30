@@ -12,6 +12,7 @@ import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.Ftp
 import app.peloskin.domain.FtpSource
+import app.peloskin.domain.Lifetime
 import app.peloskin.domain.NewRecord
 import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.PowerZones
@@ -612,5 +613,34 @@ class PeloSkinTest {
         assertEquals(false, t.longEnough)
         repeat(40) { t.onSample((40 + it) * 1000L, BikeSample(150f, 85f, 30f, 17f)) }
         assertTrue(t.longEnough)
+    }
+
+    @Test fun lifetimeTotalsOutliveRideHistory() {
+        val ride = RideSummary(1L, 1800, 150, 270, null, distanceMi = 9f, calories = 290)
+        var t = Lifetime()
+        repeat(150) { t += ride }
+        assertEquals(150, t.rides)
+        assertEquals(150L * 1800, t.seconds)
+        assertEquals(150L * 270, t.kj)
+    }
+
+    @Test fun lifetimeTotalsSurviveJsonAndStartFromOldHistory() {
+        val ride = RideSummary(1L, 1800, 150, 270, null, distanceMi = 9f, calories = 290)
+        val p = Profile("a", "A", rides = listOf(ride), lifetime = Lifetime(rides = 240, seconds = 400_000, kj = 60_000, miles = 1200.0, calories = 64_000))
+        val back = SettingsJson.decode(SettingsJson.encode(Settings(profiles = listOf(p), activeProfileId = "a")))
+        assertEquals(p.lifetime, back.active.lifetime)
+        // Saved before lifetime totals existed: they start from the rides that were kept.
+        val old = SettingsJson.decode("""{"profiles":[{"id":"a","name":"A","rides":[{"startedAt":1,"durationSec":1800,"avgPower":150,"totalKj":270}]}]}""")
+        assertEquals(1, old.active.lifetime.rides)
+        assertEquals(270L, old.active.lifetime.kj)
+    }
+
+    @Test fun mergeKeepsTheLargerLifetimeTotals() {
+        val ride = RideSummary(1L, 1800, 150, 270, null)
+        val local = Settings(profiles = listOf(Profile("a", "A", rides = listOf(ride), lifetime = Lifetime(rides = 120, kj = 30_000))), activeProfileId = "a")
+        val backup = Settings(profiles = listOf(Profile("a", "A", rides = listOf(ride), lifetime = Lifetime(rides = 118, kj = 31_000))), activeProfileId = "a")
+        val merged = SettingsMerge.merge(local, backup).active.lifetime
+        assertEquals(120, merged.rides)
+        assertEquals(31_000L, merged.kj)
     }
 }

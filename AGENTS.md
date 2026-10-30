@@ -49,6 +49,9 @@ they'd be ceremony. Keep it that way unless it grows a lot.
   one are announced; a rider's first ride doesn't fill the screen with "PR"s.
 - The settings file is version 2. Version 1 (single rider, FTP and rides at the top level) is
   read as one profile. Keep `SettingsJson` able to read every older version.
+- `Profile.lifetime` totals every saved ride, so it keeps counting after old rides drop out of
+  `rides`. Files saved before it existed start it from the kept rides; a backup merge takes the
+  larger of each total, since the two copies share rides.
 - Demo rides show a summary but are never recorded.
 - Rider pictures are files, not settings: `RiderPhotos` keeps a 320 px square JPEG per rider id in
   `files/photos/` and `Documents/PeloSkin/photos/`, syncs the two once the backup is readable,

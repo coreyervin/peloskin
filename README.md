@@ -56,7 +56,8 @@ what it's built for.
 | **Ride summary** | When a ride ends: total and average output, cadence, distance and calories, an output graph, time in each power zone, best efforts, and how it compares with your last ride of the same length. Tap any past ride to see it again. |
 | **Personal records** | Best 5-second, 1-minute, 5-minute and 20-minute output, plus best total output for each class length (20, 30, 45 minutes…). A gold banner calls out a new best the moment you set it. |
 | **Automatic FTP** | Your FTP is 95% of your best 20-minute average. PeloSkin tracks it on every ride and raises your FTP when you beat it. Easy rides never lower it, and a lower retest is one tap away. |
-| **Ride history** | Each rider's last 100 rides. |
+| **Lifetime totals** | Each rider's total rides, time, output, distance and calories, counting every ride ever saved. |
+| **Ride history** | Each rider's last 100 rides, each with its summary and graph. Older rides drop off the list but still count toward lifetime totals and records. |
 | **Backup** | Riders, pictures, settings, history, records and ride graphs are mirrored to `Documents/PeloSkin`, and come back by themselves after a reinstall. |
 
 **Set and forget**

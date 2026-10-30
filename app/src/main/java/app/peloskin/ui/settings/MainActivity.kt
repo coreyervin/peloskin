@@ -349,7 +349,7 @@ class MainActivity : ComponentActivity() {
                     Text(
                         listOfNotNull(
                             rider.ftp?.let { "FTP $it W" } ?: "No FTP yet",
-                            "${rider.rides.size} ${if (rider.rides.size == 1) "ride" else "rides"}",
+                            "${rider.lifetime.rides} ${if (rider.lifetime.rides == 1) "ride" else "rides"}",
                             rider.rides.firstOrNull()?.let { "last ride ${date(it.startedAt)}" },
                         ).joinToString(" · "),
                         color = Muted, style = bodyStyle,
@@ -357,6 +357,7 @@ class MainActivity : ComponentActivity() {
                 }
                 GhostButton(onClick = { openEditor(rider.id) }) { Text("Edit rider") }
             }
+            if (rider.lifetime.rides > 0) LifetimeRow(rider, settings.units)
             Divider()
             Row(Modifier.height(IntrinsicSize.Min)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -372,6 +373,38 @@ class MainActivity : ComponentActivity() {
             Divider()
             SubHeading("Recent rides")
             RidesSection(rider, onOpenRide)
+        }
+    }
+
+    /** Totals over every ride, not just the ones kept in history. */
+    @Composable
+    private fun LifetimeRow(rider: Profile, units: Units) {
+        val t = rider.lifetime
+        val hours = t.seconds / 3600
+        val minutes = (t.seconds % 3600) / 60
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SubHeading("Lifetime")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                LifetimeStat("Rides", "%,d".format(t.rides), null)
+                LifetimeStat("Time", if (hours > 0) "$hours" else "$minutes", if (hours > 0) "h ${minutes} min" else "min")
+                LifetimeStat("Total output", "%,d".format(t.kj), "kJ")
+                LifetimeStat("Distance", "%,.0f".format(units.distance(t.miles.toFloat())), units.distanceLabel)
+                LifetimeStat("Calories", "%,d".format(t.calories), "kcal")
+            }
+        }
+    }
+
+    @Composable
+    private fun LifetimeStat(name: String, value: String, unit: String?) {
+        Column {
+            Text(name.uppercase(), color = Muted, style = labelStyle)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(value, color = Ink, style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Light, fontSize = 32.sp))
+                unit?.let {
+                    Spacer(Modifier.width(6.dp))
+                    Text(it, color = Muted, style = bodyStyle, modifier = Modifier.padding(bottom = 6.dp))
+                }
+            }
         }
     }
 
@@ -586,7 +619,7 @@ class MainActivity : ComponentActivity() {
             AlertDialog(
                 onDismissRequest = { confirmRemove = false },
                 title = { Text("Remove ${rider.name}?") },
-                text = { Text("Their FTP, ${rider.rides.size} rides, records and picture will be deleted.") },
+                text = { Text("Their FTP, ${rider.lifetime.rides} rides, records and picture will be deleted.") },
                 confirmButton = {
                     TextButton({ SettingsStore.deleteProfile(rider.id); confirmRemove = false; closeEditor() }) {
                         Text("Remove", color = Danger)

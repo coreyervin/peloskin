@@ -11,6 +11,8 @@ data class Profile(
     /** Newest first, at most [Settings.MaxRides]. */
     val rides: List<RideSummary> = emptyList(),
     val records: Records = Records(),
+    /** Totals over every ride ever saved, including ones that have dropped out of [rides]. */
+    val lifetime: Lifetime = Lifetime.of(rides),
 ) {
     /** One or two letters for the rider's bubble: "Corey" → "C", "Jess Smith" → "JS". */
     val initials: String
@@ -20,6 +22,30 @@ data class Profile(
     companion object {
         const val FirstId = "rider-1"
         fun first() = Profile(FirstId, "Rider 1")
+    }
+}
+
+/** A rider's totals over all their rides. */
+data class Lifetime(
+    val rides: Int = 0,
+    val seconds: Long = 0,
+    val kj: Long = 0,
+    val miles: Double = 0.0,
+    val calories: Long = 0,
+) {
+    operator fun plus(r: RideSummary) = Lifetime(
+        rides + 1, seconds + r.durationSec, kj + r.totalKj, miles + r.distanceMi, calories + r.calories,
+    )
+
+    /** The larger of each total, for combining two copies of the same rider's history. */
+    fun max(other: Lifetime) = Lifetime(
+        maxOf(rides, other.rides), maxOf(seconds, other.seconds), maxOf(kj, other.kj),
+        maxOf(miles, other.miles), maxOf(calories, other.calories),
+    )
+
+    companion object {
+        /** Totals for a list of rides, for history saved before lifetime totals existed. */
+        fun of(rides: List<RideSummary>) = rides.fold(Lifetime()) { total, r -> total + r }
     }
 }
 

@@ -1,5 +1,6 @@
 package app.peloskin.data.store
 
+import app.peloskin.domain.Lifetime
 import app.peloskin.domain.Profile
 import app.peloskin.domain.Record
 import app.peloskin.domain.Records
@@ -36,7 +37,10 @@ object SettingsMerge {
             efforts = best(local.records.efforts, backup.records.efforts),
             byLength = best(local.records.byLength, backup.records.byLength),
         )
-        val merged = local.copy(rides = rides, records = records)
+        // Neither copy's totals can simply be added: they share rides. Each total takes the larger
+        // copy's, and never less than the combined history adds up to.
+        val lifetime = local.lifetime.max(backup.lifetime).max(Lifetime.of(rides))
+        val merged = local.copy(rides = rides, records = records, lifetime = lifetime)
         val backupFtpIsNewer = backup.ftp != null && (local.ftp == null || backup.ftpSetAt > local.ftpSetAt)
         return if (backupFtpIsNewer) {
             merged.copy(ftp = backup.ftp, ftpSource = backup.ftpSource, ftpSetAt = backup.ftpSetAt)

@@ -3,6 +3,7 @@ package app.peloskin.data.store
 import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.FtpSource
+import app.peloskin.domain.Lifetime
 import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.Profile
 import app.peloskin.domain.Record
@@ -65,6 +66,13 @@ object SettingsJson {
             put("efforts", encodeRecords(p.records.efforts))
             put("byLength", encodeRecords(p.records.byLength))
         })
+        put("lifetime", JSONObject().apply {
+            put("rides", p.lifetime.rides)
+            put("seconds", p.lifetime.seconds)
+            put("kj", p.lifetime.kj)
+            put("miles", p.lifetime.miles)
+            put("calories", p.lifetime.calories)
+        })
     }
 
     /** Reads a profile object, or a version 1 file's top level when [fallback] is given. */
@@ -76,6 +84,10 @@ object SettingsJson {
         val records = o.optJSONObject("records")?.let {
             Records(decodeRecords(it.optJSONObject("efforts")), decodeRecords(it.optJSONObject("byLength")))
         } ?: PersonalRecords.rebuild(rides)
+        // Likewise lifetime totals, which start from the rides that were kept.
+        val lifetime = o.optJSONObject("lifetime")?.let {
+            Lifetime(it.optInt("rides"), it.optLong("seconds"), it.optLong("kj"), it.optDouble("miles", 0.0), it.optLong("calories"))
+        } ?: Lifetime.of(rides)
         return Profile(
             id = o.optString("id").ifEmpty { d.id },
             name = o.optString("name").ifEmpty { d.name },
@@ -85,6 +97,7 @@ object SettingsJson {
             autoFtp = o.optBoolean("autoFtp", d.autoFtp),
             rides = rides,
             records = records,
+            lifetime = lifetime,
         )
     }
 

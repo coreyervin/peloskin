@@ -238,7 +238,7 @@ object SettingsStore {
                 val newFtp = Ftp.afterRide(p.ftp, p.autoFtp, ride)
                 finished = FinishedRide(p.id, p.name, ride, detail, previous, broken, newFtp)
                 val rides = (listOf(ride) + p.rides).take(Settings.MaxRides)
-                val updated = p.copy(rides = rides, records = records)
+                val updated = p.copy(rides = rides, records = records, lifetime = p.lifetime + ride)
                 if (newFtp != null) updated.copy(ftp = newFtp, ftpSource = FtpSource.Ride, ftpSetAt = ride.startedAt) else updated
             }
         }
