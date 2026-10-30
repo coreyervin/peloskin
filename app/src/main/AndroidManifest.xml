@@ -7,6 +7,10 @@
     <queries>
         <package android:name="com.onepeloton.affernetservice" />
         <package android:name="com.peloton.service.SensorData" />
+        <!-- A camera app, if the tablet has one, for taking a rider's picture. -->
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
     </queries>
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />

@@ -369,11 +369,12 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         val f by feed.status.collectAsState()
         val settings by SettingsStore.settings.collectAsState()
         val banner by SettingsStore.banner.collectAsState()
+        val photos = rememberRiderPhotos()
         val active = settings.active
         return SkinState(
             ride = r, feed = f, ftp = active.ftp, banner = banner, units = settings.units,
-            // The rider chip only appears once there's more than one rider.
-            rider = RiderBadge(active.initials, settings.profiles.indexOf(active)).takeIf { settings.profiles.size > 1 },
+            // A lone rider without a picture doesn't need a bubble saying who's riding.
+            rider = settings.badgeFor(active, photos).takeIf { settings.profiles.size > 1 || it?.photo != null },
         )
     }
 
@@ -408,6 +409,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         }
         val view = composeView {
             val settings by SettingsStore.settings.collectAsState()
+            val photos = rememberRiderPhotos()
             Box(
                 Modifier.fillMaxSize().background(Color(0xCC000000))
                     .clickable(remember { MutableInteractionSource() }, null) { SettingsStore.dismissSummary() },
@@ -417,6 +419,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                 RideSummaryCard(
                     finished, settings.units, Modifier.padding(vertical = 24.dp).verticalScroll(rememberScrollState()),
                     footer = "Tap anywhere to close",
+                    rider = settings.badgeFor(settings.profiles.find { it.id == finished.profileId }, photos),
                 )
             }
         }

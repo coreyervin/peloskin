@@ -2,13 +2,17 @@ package app.peloskin.ui.settings
 
 import android.Manifest
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,10 +20,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,15 +59,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -71,6 +83,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.peloskin.data.bike.BikeModel
 import app.peloskin.data.bike.FeedStatus
 import app.peloskin.data.store.FinishedRide
+import app.peloskin.data.store.RiderPhotos
 import app.peloskin.data.store.SettingsStore
 import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.CompactMetric
@@ -84,7 +97,11 @@ import app.peloskin.domain.Settings
 import app.peloskin.domain.SkinMode
 import app.peloskin.domain.Units
 import app.peloskin.ui.overlay.Figtree
+import app.peloskin.ui.overlay.RiderAvatar
+import app.peloskin.ui.overlay.RiderBadge
 import app.peloskin.ui.overlay.SkinService
+import app.peloskin.ui.overlay.badgeFor
+import app.peloskin.ui.overlay.rememberRiderPhotos
 import app.peloskin.ui.overlay.riderColor
 import app.peloskin.ui.summary.RideSummaryCard
 import java.text.SimpleDateFormat
@@ -97,17 +114,56 @@ import kotlinx.coroutines.withContext
 
 private val Bg = Color(0xFF111317)
 private val Card = Color(0xFF1A1D23)
+private val Raised = Color(0xFF22262D)
 private val Ink = Color(0xFFE9EBEF)
 private val Muted = Color(0xFF9AA1AE)
+private val Line = Color(0xFF2C3038)
 private val Accent = Color(0xFF41C7C7)
 private val Gold = Color(0xFFE6B422)
 private val Warn = Color(0xFFE6B422)
+private val Danger = Color(0xFFFF6B6B)
 
 class MainActivity : ComponentActivity() {
     /** Permissions are granted in other screens, so re-check whenever we come back. */
     private val permissions = MutableStateFlow(Perms(false, false))
 
     data class Perms(val overlay: Boolean, val files: Boolean)
+
+    /** A picture change in the rider editor, kept until it's saved. */
+    sealed interface PhotoEdit {
+        object Unchanged : PhotoEdit
+        object Removed : PhotoEdit
+        data class Picked(val photo: Bitmap) : PhotoEdit
+    }
+
+    /** The rider being edited: an existing rider's id, or [NewRider]. Null when the editor is closed. */
+    private val editing = MutableStateFlow<String?>(null)
+    private val photoEdit = MutableStateFlow<PhotoEdit>(PhotoEdit.Unchanged)
+    private val photoError = MutableStateFlow<String?>(null)
+
+    private val pickPhoto = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri ?: return@registerForActivityResult
+        lifecycleScope.launch {
+            val photo = withContext(Dispatchers.IO) { RiderPhotos.decode(this@MainActivity, uri) }
+            if (photo != null) photoEdit.value = PhotoEdit.Picked(photo) else photoError.value = "Couldn't open that picture."
+        }
+    }
+
+    private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        bitmap ?: return@registerForActivityResult
+        photoEdit.value = PhotoEdit.Picked(RiderPhotos.square(bitmap))
+    }
+
+    private fun canTakePhoto() = Intent(MediaStore.ACTION_IMAGE_CAPTURE).resolveActivity(packageManager) != null
+
+    private fun choosePhoto() {
+        photoError.value = null
+        try {
+            pickPhoto.launch("image/*")
+        } catch (e: Exception) {
+            photoError.value = "No app on this tablet can pick pictures. Install a file manager or gallery app."
+        }
+    }
 
     private fun refreshPermissions() {
         // File access may have just been granted: adopt the backup if this is a fresh install.
@@ -142,25 +198,20 @@ class MainActivity : ComponentActivity() {
     private fun Screen() {
         val settings by SettingsStore.settings.collectAsState()
         val running by SkinService.running.collectAsState()
-        val riding by SkinService.riding.collectAsState()
-        val feed by SkinService.feedStatus.collectAsState()
-        val source by SkinService.feedSource.collectAsState()
-        val demo by SettingsStore.demoRide.collectAsState()
-        val model = remember { BikeModel.detect(this) }
-        val perms by permissions.collectAsState()
         val lastFinished by SettingsStore.lastFinished.collectAsState()
-        var message by remember { mutableStateOf<String?>(null) }
+        val editingId by editing.collectAsState()
+        val photos = rememberRiderPhotos()
         var viewing by remember { mutableStateOf<FinishedRide?>(null) }
-        var allRides by remember { mutableStateOf(false) }
         val rider = settings.active
 
         // A ride that ended with the skin stopped has no overlay to show its summary, so show it here.
         val showing = viewing ?: lastFinished?.takeIf { !running }
         showing?.let { f ->
-            SummaryDialog(f, settings.units) {
+            SummaryDialog(f, settings.units, settings.badgeFor(settings.profiles.find { it.id == f.profileId }, photos)) {
                 if (viewing != null) viewing = null else SettingsStore.dismissSummary()
             }
         }
+        editingId?.let { id -> RiderEditor(settings, settings.profiles.find { it.id == id }, photos) }
 
         Box(Modifier.fillMaxSize().background(Bg), contentAlignment = Alignment.TopCenter) {
             Column(
@@ -168,163 +219,171 @@ class MainActivity : ComponentActivity() {
                     .padding(horizontal = 32.dp, vertical = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                Text("PeloSkin", color = Ink, style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 34.sp))
-                Text("Peloton-style ride metrics, read straight from your bike.", color = Muted, style = bodyStyle)
-
-                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Section("Skin") {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(if (running) "Showing" else "Off", color = Ink, style = titleStyle)
-                                    if (running) Text(
-                                        when (feed) {
-                                            FeedStatus.Connected -> listOfNotNull("Reading the bike", source).joinToString(" · ")
-                                            FeedStatus.Connecting -> "Connecting to the bike…"
-                                            FeedStatus.NotFound -> "Can't read the bike. Check that the sensor cable is plugged into the tablet."
-                                            FeedStatus.Unsupported ->
-                                                if (model == BikeModel.NotPeloton) "No Peloton bike on this device. Turn on Demo ride to try PeloSkin."
-                                                else "${model.displayName} isn't supported yet."
-                                        },
-                                        color = if (feed == FeedStatus.Connected || feed == FeedStatus.Connecting) Muted else Warn,
-                                        style = bodyStyle,
-                                    )
-                                }
-                                // Ends the ride without turning the skin off; Stop does both.
-                                if (running && riding) {
-                                    GhostButton(onClick = { SkinService.requestEndRide() }) { Text("End ride") }
-                                    Spacer(Modifier.width(12.dp))
-                                }
-                                if (running) GhostButton(onClick = { SkinService.stop(this@MainActivity) }) { Text("Stop") }
-                                else Button(
-                                    onClick = { SkinService.start(this@MainActivity) },
-                                    enabled = perms.overlay,
-                                    colors = ButtonDefaults.buttonColors(backgroundColor = Accent),
-                                ) { Text("Start") }
-                            }
-                            if (!perms.overlay) PermissionRow(
-                                "PeloSkin needs permission to draw over other apps.",
-                                "Allow",
-                            ) {
-                                startActivity(Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-                            }
-                            Toggle("Start when the bike turns on", settings.startOnBoot) { v ->
-                                SettingsStore.update { it.copy(startOnBoot = v) }
-                            }
-                            // Lets you try PeloSkin, or work on it, away from a Peloton.
-                            if (model == BikeModel.NotPeloton) {
-                                Toggle("Demo ride (no Peloton found on this device)", demo) { SettingsStore.setDemoRide(it) }
-                            }
-                        }
-
-                        Section("Riders") { RidersSection(settings) }
-
-                        Section("FTP · ${rider.name}") { FtpSection(rider) }
-                    }
-
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Section("Layout") {
-                            Text("Start in", color = Muted, style = bodyStyle)
-                            Choice(listOf(SkinMode.Full to "Full", SkinMode.Compact to "Single line"), settings.startMode) { v ->
-                                SettingsStore.update { it.copy(startMode = v) }
-                            }
-                            Text("Speed and distance in", color = Muted, style = bodyStyle)
-                            Choice(listOf(Units.Imperial to "mph · miles", Units.Metric to "km/h · km"), settings.units) { v ->
-                                SettingsStore.update { it.copy(units = v) }
-                            }
-                            Text("Single-line bar sits at the", color = Muted, style = bodyStyle)
-                            Choice(listOf(CompactEdge.Top to "Top", CompactEdge.Bottom to "Bottom"), settings.compactEdge) { v ->
-                                SettingsStore.update { it.copy(compactEdge = v) }
-                            }
-                            Text("Single-line bar shows", color = Muted, style = bodyStyle)
-                            CompactMetric.values().toList().chunked(2).forEach { pair ->
-                                Row {
-                                    pair.forEach { m ->
-                                        Row(Modifier.weight(1f).clickable { toggleMetric(m) }, verticalAlignment = Alignment.CenterVertically) {
-                                            Checkbox(m in settings.compactMetrics, { toggleMetric(m) },
-                                                colors = CheckboxDefaults.colors(checkedColor = Accent, uncheckedColor = Muted))
-                                            Text(m.label, color = Ink, style = bodyStyle)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Section("Records · ${rider.name}") { RecordsSection(rider) }
-
-                        Section("Backup") {
-                            Text(SettingsStore.backupFile.path, color = Muted, style = smallStyle)
-                            if (!perms.files) PermissionRow(
-                                "Turn on file access so your FTP and rides are saved outside the app.",
-                                "Allow",
-                            ) {
-                                requestFileAccess()
-                            } else {
-                                val file = SettingsStore.backupFile
-                                Text(
-                                    if (file.exists()) "Saved automatically. Last backup ${dateTime(file.lastModified())}."
-                                    else "No backup yet. One is written whenever something changes.",
-                                    color = Ink, style = bodyStyle,
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    GhostButton(onClick = {
-                                        message = if (SettingsStore.backup()) "Backed up" else "Couldn't write the backup file"
-                                    }) { Text("Back up now") }
-                                    GhostButton(onClick = {
-                                        message = if (SettingsStore.restore()) "Restored from backup" else "No backup file found"
-                                    }) { Text("Restore") }
-                                }
-                            }
-                            message?.let { Text(it, color = Accent, style = bodyStyle) }
-                        }
-                    }
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("PeloSkin", color = Ink, style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 34.sp))
+                    Spacer(Modifier.width(16.dp))
+                    Text("Your ride metrics over any app on the bike.", color = Muted, style = bodyStyle,
+                        modifier = Modifier.padding(bottom = 6.dp))
                 }
 
-                Section("Recent rides · ${rider.name}") {
-                    if (rider.rides.isEmpty()) {
-                        Text("Rides with at least 5 minutes of pedaling show up here.", color = Muted, style = bodyStyle)
-                    } else {
-                        Text("Tap a ride to see its summary.", color = Muted, style = smallStyle)
-                    }
-                    rider.rides.take(if (allRides) Settings.MaxRides else 10).forEach { r ->
-                        Row(
-                            Modifier.clickable { viewing = historyView(rider, r) }.padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(dateTime(r.startedAt), color = Ink, style = bodyStyle, modifier = Modifier.weight(1.4f))
-                            Text("${r.durationSec / 60} min", color = Ink, style = bodyStyle, modifier = Modifier.weight(1f))
-                            Text("${r.avgPower} W avg", color = Ink, style = bodyStyle, modifier = Modifier.weight(1f))
-                            Text("${r.totalKj} kJ", color = Ink, style = bodyStyle, modifier = Modifier.weight(1f))
-                            Text(
-                                r.best20Watts?.let { "Best 20 min ${it} W → FTP ${Ftp.fromBest20(it)}" } ?: "Under 20 min",
-                                color = Muted, style = bodyStyle, modifier = Modifier.weight(2f),
-                            )
-                            // Rides only raise FTP on their own; this applies a lower retest result too.
-                            val rideFtp = r.best20Watts?.let(Ftp::fromBest20)
-                            Box(Modifier.width(96.dp), contentAlignment = Alignment.CenterEnd) {
-                                if (rideFtp != null && rideFtp != rider.ftp) {
-                                    GhostButton(onClick = { SettingsStore.useRideForFtp(r) }) { Text("Use") }
-                                }
-                            }
-                        }
-                    }
-                    if (rider.rides.size > 10) {
-                        GhostButton(onClick = { allRides = !allRides }) {
-                            Text(if (allRides) "Show fewer" else "Show all ${rider.rides.size} rides")
-                        }
+                SkinCard(settings)
+
+                Heading("Who's riding")
+                RiderPicker(settings, photos)
+                RiderCard(settings, rider, photos) { viewing = it }
+
+                Heading("Skin settings")
+                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Section("Layout", Modifier.weight(1f).fillMaxHeight()) { LayoutSettings(settings) }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        Section("On the bike") { BikeSettings(settings) }
+                        Section("Backup") { BackupSettings() }
                     }
                 }
             }
         }
     }
 
+    // -------------------------------------------------------------- skin
+
+    /** On/off, what it's reading, and ending a ride. The one thing used every ride, so it's first. */
+    @Composable
+    private fun SkinCard(settings: Settings) {
+        val running by SkinService.running.collectAsState()
+        val riding by SkinService.riding.collectAsState()
+        val feed by SkinService.feedStatus.collectAsState()
+        val source by SkinService.feedSource.collectAsState()
+        val perms by permissions.collectAsState()
+        val model = remember { BikeModel.detect(this) }
+        val ok = feed == FeedStatus.Connected || feed == FeedStatus.Connecting
+        Section(null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(12.dp).background(if (running && ok) Accent else if (running) Warn else Muted, CircleShape))
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        when {
+                            !running -> "Skin is off"
+                            riding -> "Riding as ${settings.active.name}"
+                            else -> "Skin is on"
+                        },
+                        color = Ink, style = titleStyle,
+                    )
+                    Text(
+                        if (!running) "Start it, then open your class in any app." else when (feed) {
+                            FeedStatus.Connected -> listOfNotNull("Reading the bike", source).joinToString(" · ") +
+                                if (riding) " · hold the skin to end the ride" else ""
+                            FeedStatus.Connecting -> "Connecting to the bike…"
+                            FeedStatus.NotFound -> "Can't read the bike. Check that the sensor cable is plugged into the tablet."
+                            FeedStatus.Unsupported ->
+                                if (model == BikeModel.NotPeloton) "No Peloton bike on this device. Turn on Demo ride to try PeloSkin."
+                                else "${model.displayName} isn't supported yet."
+                        },
+                        color = if (!running || ok) Muted else Warn, style = bodyStyle,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Ends the ride without turning the skin off; Stop does both.
+                    if (running && riding) GhostButton(onClick = { SkinService.requestEndRide() }) { Text("End ride") }
+                    if (running) GhostButton(onClick = { SkinService.stop(this@MainActivity) }) { Text("Stop") }
+                    else PrimaryButton(onClick = { SkinService.start(this@MainActivity) }, enabled = perms.overlay) { Text("Start") }
+                }
+            }
+            if (!perms.overlay) PermissionRow("PeloSkin needs permission to draw over other apps.", "Allow") {
+                startActivity(Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ riders
+
+    /** Every rider as a picture; tap one to ride as them. The last tile adds a rider. */
+    @Composable
+    private fun RiderPicker(settings: Settings, photos: Map<String, androidx.compose.ui.graphics.ImageBitmap>) {
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            settings.profiles.forEach { p ->
+                val active = p.id == settings.active.id
+                RiderTile(p.name, active, onClick = { SettingsStore.setActiveProfile(p.id) }) {
+                    RiderAvatar(settings.badgeFor(p, photos)!!, Modifier.fillMaxSize(), fontSize = 26.sp)
+                }
+            }
+            RiderTile("Add rider", active = false, onClick = { openEditor(NewRider) }) {
+                Box(Modifier.fillMaxSize().border(1.5.dp, Muted, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("+", color = Muted, style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Light, fontSize = 34.sp))
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun RiderTile(name: String, active: Boolean, onClick: () -> Unit, avatar: @Composable () -> Unit) {
+        Column(
+            Modifier.width(96.dp).clickable(remember { MutableInteractionSource() }, null, onClick = onClick),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // The rider on the bike gets a teal ring, like the selected tab in Peloton's own app.
+            Box(
+                Modifier.size(84.dp).border(3.dp, if (active) Accent else Color.Transparent, CircleShape).padding(6.dp),
+            ) { avatar() }
+            Text(name, color = if (active) Ink else Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = if (active) bodyStyle.copy(fontWeight = FontWeight.SemiBold) else bodyStyle)
+        }
+    }
+
+    /** Everything that belongs to the rider on the bike: FTP, records and rides. */
+    @Composable
+    private fun RiderCard(settings: Settings, rider: Profile, photos: Map<String, androidx.compose.ui.graphics.ImageBitmap>, onOpenRide: (FinishedRide) -> Unit) {
+        Section(null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(64.dp).clickable { openEditor(rider.id) }) {
+                    RiderAvatar(settings.badgeFor(rider, photos)!!, Modifier.fillMaxSize(), fontSize = 24.sp)
+                }
+                Spacer(Modifier.width(18.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(rider.name, color = Ink, style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 26.sp))
+                    Text(
+                        listOfNotNull(
+                            rider.ftp?.let { "FTP $it W" } ?: "No FTP yet",
+                            "${rider.rides.size} ${if (rider.rides.size == 1) "ride" else "rides"}",
+                            rider.rides.firstOrNull()?.let { "last ride ${date(it.startedAt)}" },
+                        ).joinToString(" · "),
+                        color = Muted, style = bodyStyle,
+                    )
+                }
+                GhostButton(onClick = { openEditor(rider.id) }) { Text("Edit rider") }
+            }
+            Divider()
+            Row(Modifier.height(IntrinsicSize.Min)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SubHeading("FTP")
+                    FtpSection(rider)
+                }
+                Box(Modifier.padding(horizontal = 24.dp).width(1.dp).fillMaxHeight().background(Line))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SubHeading("Personal records")
+                    RecordsSection(rider)
+                }
+            }
+            Divider()
+            SubHeading("Recent rides")
+            RidesSection(rider, onOpenRide)
+        }
+    }
+
     @Composable
     private fun FtpSection(rider: Profile) {
         var text by remember(rider.id, rider.ftp) { mutableStateOf(rider.ftp?.toString() ?: "") }
+        val focus = LocalFocusManager.current
+        // Closes the keyboard too, so it doesn't pop back up over the screen.
+        val save = {
+            SettingsStore.setFtp(text.toIntOrNull()?.takeIf { it > 0 })
+            focus.clearFocus()
+        }
         Text(
             when {
-                rider.ftp == null -> "Not set yet. The zone bar appears once you have an FTP."
-                rider.ftpSource == FtpSource.Ride -> "${rider.ftp} W, from your best 20 minutes on ${date(rider.ftpSetAt)}"
+                rider.ftp == null -> "Not set yet. The zone bar appears once there's an FTP."
+                rider.ftpSource == FtpSource.Ride -> "${rider.ftp} W, from the best 20 minutes on ${date(rider.ftpSetAt)}"
                 else -> "${rider.ftp} W, entered ${date(rider.ftpSetAt)}"
             },
             color = Ink, style = bodyStyle,
@@ -339,88 +398,23 @@ class MainActivity : ComponentActivity() {
                 onValueChange = { v -> text = v.filter(Char::isDigit).take(4) },
                 label = { Text("FTP (watts)") },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { save() }),
                 colors = fieldColors(),
-                modifier = Modifier.width(180.dp),
+                modifier = Modifier.width(160.dp),
             )
-            GhostButton(onClick = { SettingsStore.setFtp(text.toIntOrNull()?.takeIf { it > 0 }) }) { Text("Save") }
+            GhostButton(onClick = save) { Text("Save") }
         }
-        Toggle("Raise FTP automatically when a ride beats it", rider.autoFtp) { SettingsStore.setAutoFtp(it) }
-        Text("FTP is 95% of your best 20-minute average output. For a real number, take the 20 min FTP Test Ride and go all out.",
+        Toggle("Raise FTP when a ride beats it", rider.autoFtp) { SettingsStore.setAutoFtp(it) }
+        Text("FTP is 95% of your best 20-minute average output. For a real number, take a 20 min FTP test and go all out.",
             color = Muted, style = smallStyle)
-    }
-
-    @Composable
-    private fun RidersSection(settings: Settings) {
-        var newName by remember { mutableStateOf("") }
-        var renaming by remember { mutableStateOf<String?>(null) }
-        // Starts with the whole current name selected, so typing replaces it.
-        var renameText by remember { mutableStateOf(TextFieldValue("")) }
-        var removing by remember { mutableStateOf<Profile?>(null) }
-        Text("Each rider has their own FTP, rides and records. Tap a name to switch, or tap the rider's bubble on the skin.",
-            color = Muted, style = smallStyle)
-        settings.profiles.forEachIndexed { index, p ->
-            val active = p.id == settings.active.id
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    Modifier.size(14.dp).border(2.dp, if (active) Accent else Muted, CircleShape).padding(3.dp)
-                        .background(if (active) Accent else Color.Transparent, CircleShape)
-                )
-                // The same bubble the skin shows for this rider.
-                Box(Modifier.size(32.dp).background(riderColor(index), CircleShape), contentAlignment = Alignment.Center) {
-                    Text(p.initials, color = Color(0xFF14161A),
-                        style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 14.sp))
-                }
-                if (renaming == p.id) {
-                    val focus = remember { FocusRequester() }
-                    val save = { SettingsStore.renameProfile(p.id, renameText.text); renaming = null }
-                    OutlinedTextField(
-                        renameText, { if (it.text.length <= 20) renameText = it }, singleLine = true, colors = fieldColors(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { save() }),
-                        modifier = Modifier.weight(1f).focusRequester(focus),
-                    )
-                    // Open the keyboard straight away, ready to type the new name.
-                    LaunchedEffect(Unit) { focus.requestFocus() }
-                    GhostButton(onClick = save) { Text("Done") }
-                } else {
-                    Text(p.name, color = Ink, style = if (active) titleStyle else bodyStyle,
-                        modifier = Modifier.weight(1f).clickable { SettingsStore.setActiveProfile(p.id) }.padding(vertical = 6.dp))
-                    Text("${p.rides.size} rides", color = Muted, style = smallStyle)
-                    GhostButton(onClick = {
-                        renaming = p.id
-                        renameText = TextFieldValue(p.name, selection = TextRange(0, p.name.length))
-                    }) { Text("Rename") }
-                    if (settings.profiles.size > 1) GhostButton(onClick = { removing = p }) { Text("Remove") }
-                }
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(
-                newName, { newName = it.take(20) }, label = { Text("New rider's name") }, singleLine = true,
-                colors = fieldColors(), modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { SettingsStore.addProfile(newName); newName = "" }),
-            )
-            GhostButton(onClick = { SettingsStore.addProfile(newName); newName = "" }) { Text("Add rider") }
-        }
-        removing?.let { p ->
-            AlertDialog(
-                onDismissRequest = { removing = null },
-                title = { Text("Remove ${p.name}?") },
-                text = { Text("Their FTP, ${p.rides.size} rides and records will be deleted.") },
-                confirmButton = { TextButton({ SettingsStore.deleteProfile(p.id); removing = null }) { Text("Remove", color = Warn) } },
-                dismissButton = { TextButton({ removing = null }) { Text("Cancel", color = Ink) } },
-                backgroundColor = Card, contentColor = Ink,
-            )
-        }
     }
 
     @Composable
     private fun RecordsSection(rider: Profile) {
         val records = rider.records
         if (records.efforts.isEmpty() && records.byLength.isEmpty()) {
-            Text("Your best efforts and ride records show up here after your first ride.", color = Muted, style = bodyStyle)
+            Text("Best efforts and ride records show up here after the first ride.", color = Muted, style = bodyStyle)
             return
         }
         Text("BEST EFFORTS", color = Muted, style = labelStyle)
@@ -442,6 +436,241 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Composable
+    private fun RidesSection(rider: Profile, onOpenRide: (FinishedRide) -> Unit) {
+        var allRides by remember(rider.id) { mutableStateOf(false) }
+        if (rider.rides.isEmpty()) {
+            Text("Rides with at least 5 minutes of pedaling show up here.", color = Muted, style = bodyStyle)
+            return
+        }
+        Row(Modifier.padding(horizontal = 12.dp)) {
+            listOf("DATE" to 1.4f, "LENGTH" to 1f, "AVG OUTPUT" to 1f, "TOTAL" to 1f, "BEST 20 MIN" to 2f).forEach { (h, w) ->
+                Text(h, color = Muted, style = labelStyle, modifier = Modifier.weight(w))
+            }
+            Spacer(Modifier.width(96.dp))
+        }
+        rider.rides.take(if (allRides) Settings.MaxRides else 10).forEachIndexed { i, r ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+                    .background(if (i % 2 == 0) Raised else Color.Transparent)
+                    .clickable { onOpenRide(historyView(rider, r)) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(dateTime(r.startedAt), color = Ink, style = bodyStyle, modifier = Modifier.weight(1.4f))
+                Text("${r.durationSec / 60} min", color = Ink, style = bodyStyle, modifier = Modifier.weight(1f))
+                Text("${r.avgPower} W", color = Ink, style = bodyStyle, modifier = Modifier.weight(1f))
+                Text("${r.totalKj} kJ", color = Ink, style = bodyStyle, modifier = Modifier.weight(1f))
+                Text(
+                    r.best20Watts?.let { "$it W → FTP ${Ftp.fromBest20(it)}" } ?: "Under 20 min",
+                    color = Muted, style = bodyStyle, modifier = Modifier.weight(2f),
+                )
+                // Rides only raise FTP on their own; this applies a lower retest result too.
+                val rideFtp = r.best20Watts?.let(Ftp::fromBest20)
+                Box(Modifier.width(96.dp).height(40.dp), contentAlignment = Alignment.CenterEnd) {
+                    if (rideFtp != null && rideFtp != rider.ftp) {
+                        TextButton(onClick = { SettingsStore.useRideForFtp(r) }) { Text("Use FTP", color = Accent) }
+                    }
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Tap a ride to see its summary.", color = Muted, style = smallStyle, modifier = Modifier.weight(1f))
+            if (rider.rides.size > 10) {
+                TextButton(onClick = { allRides = !allRides }) {
+                    Text(if (allRides) "Show fewer" else "Show all ${rider.rides.size} rides", color = Accent)
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------- rider editor
+
+    private fun openEditor(id: String) {
+        photoEdit.value = PhotoEdit.Unchanged
+        photoError.value = null
+        editing.value = id
+    }
+
+    private fun closeEditor() {
+        editing.value = null
+        photoEdit.value = PhotoEdit.Unchanged
+    }
+
+    /** Name and picture for a new or existing rider, and removing a rider. Nothing changes until Save. */
+    @Composable
+    private fun RiderEditor(settings: Settings, rider: Profile?, photos: Map<String, androidx.compose.ui.graphics.ImageBitmap>) {
+        val edit by photoEdit.collectAsState()
+        val error by photoError.collectAsState()
+        // Starts with the whole current name selected, so typing replaces it.
+        var name by remember(rider?.id) {
+            val n = rider?.name ?: ""
+            mutableStateOf(TextFieldValue(n, selection = TextRange(0, n.length)))
+        }
+        var confirmRemove by remember { mutableStateOf(false) }
+        val current = rider?.let { photos[it.id] }
+        val shown = when (val e = edit) {
+            PhotoEdit.Unchanged -> current
+            PhotoEdit.Removed -> null
+            is PhotoEdit.Picked -> remember(e) { e.photo.asImageBitmap() }
+        }
+        val index = rider?.let { r -> settings.profiles.indexOfFirst { it.id == r.id } } ?: settings.profiles.size
+        val preview = RiderBadge(Profile("", name.text.ifBlank { "?" }).initials, index, shown)
+        val save = {
+            val id = if (rider == null) SettingsStore.addProfile(name.text) else {
+                SettingsStore.renameProfile(rider.id, name.text)
+                rider.id
+            }
+            if (id != null) {
+                when (val e = edit) {
+                    PhotoEdit.Unchanged -> {}
+                    PhotoEdit.Removed -> RiderPhotos.set(id, null)
+                    is PhotoEdit.Picked -> RiderPhotos.set(id, e.photo)
+                }
+                closeEditor()
+            }
+        }
+
+        Dialog(onDismissRequest = ::closeEditor, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Column(
+                Modifier.width(560.dp).background(Card, RoundedCornerShape(12.dp)).padding(28.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Text(if (rider == null) "New rider" else "Edit rider", color = Ink, style = titleStyle)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RiderAvatar(preview, Modifier.size(112.dp), fontSize = 40.sp)
+                    Spacer(Modifier.width(24.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GhostButton(onClick = ::choosePhoto) { Text(if (shown == null) "Choose picture" else "Change picture") }
+                        if (canTakePhoto()) GhostButton(onClick = {
+                            photoError.value = null
+                            runCatching { takePhoto.launch(null) }.onFailure { photoError.value = "Couldn't open the camera." }
+                        }) { Text("Take picture") }
+                        if (shown != null) TextButton(onClick = { photoEdit.value = PhotoEdit.Removed }) {
+                            Text("Remove picture", color = Muted)
+                        }
+                    }
+                }
+                error?.let { Text(it, color = Warn, style = bodyStyle) }
+                val focus = remember { FocusRequester() }
+                OutlinedTextField(
+                    name, { if (it.text.length <= 20) name = it }, label = { Text("Name") }, singleLine = true,
+                    colors = fieldColors(), modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { save() }),
+                )
+                // A new rider needs a name first, so open the keyboard straight away.
+                if (rider == null) LaunchedEffect(Unit) { focus.requestFocus() }
+                Text(
+                    if (rider == null) "They get their own FTP, rides and records. Switch riders here or by tapping the bubble on the skin."
+                    else "Each rider has their own FTP, rides and records.",
+                    color = Muted, style = smallStyle,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (rider != null && settings.profiles.size > 1) {
+                        TextButton(onClick = { confirmRemove = true }) { Text("Remove rider", color = Danger) }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = ::closeEditor) { Text("Cancel", color = Ink) }
+                    Spacer(Modifier.width(12.dp))
+                    PrimaryButton(onClick = save, enabled = name.text.isNotBlank()) { Text(if (rider == null) "Add rider" else "Save") }
+                }
+            }
+        }
+
+        if (confirmRemove && rider != null) {
+            AlertDialog(
+                onDismissRequest = { confirmRemove = false },
+                title = { Text("Remove ${rider.name}?") },
+                text = { Text("Their FTP, ${rider.rides.size} rides, records and picture will be deleted.") },
+                confirmButton = {
+                    TextButton({ SettingsStore.deleteProfile(rider.id); confirmRemove = false; closeEditor() }) {
+                        Text("Remove", color = Danger)
+                    }
+                },
+                dismissButton = { TextButton({ confirmRemove = false }) { Text("Cancel", color = Ink) } },
+                backgroundColor = Card, contentColor = Ink,
+            )
+        }
+    }
+
+    // ------------------------------------------------------ skin settings
+
+    @Composable
+    private fun LayoutSettings(settings: Settings) {
+        Field("Start in") {
+            Choice(listOf(SkinMode.Full to "Full", SkinMode.Compact to "Single line"), settings.startMode) { v ->
+                SettingsStore.update { it.copy(startMode = v) }
+            }
+        }
+        Field("Speed and distance") {
+            Choice(listOf(Units.Imperial to "mph · miles", Units.Metric to "km/h · km"), settings.units) { v ->
+                SettingsStore.update { it.copy(units = v) }
+            }
+        }
+        Field("Single-line bar sits at the") {
+            Choice(listOf(CompactEdge.Top to "Top", CompactEdge.Bottom to "Bottom"), settings.compactEdge) { v ->
+                SettingsStore.update { it.copy(compactEdge = v) }
+            }
+        }
+        Field("Single-line bar shows") {
+            CompactMetric.values().toList().chunked(2).forEach { pair ->
+                Row {
+                    pair.forEach { m ->
+                        Row(Modifier.weight(1f).clickable { toggleMetric(m) }, verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(m in settings.compactMetrics, { toggleMetric(m) },
+                                colors = CheckboxDefaults.colors(checkedColor = Accent, uncheckedColor = Muted))
+                            Text(m.label, color = Ink, style = bodyStyle)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun BikeSettings(settings: Settings) {
+        val demo by SettingsStore.demoRide.collectAsState()
+        val model = remember { BikeModel.detect(this) }
+        Toggle("Start when the bike turns on", settings.startOnBoot) { v ->
+            SettingsStore.update { it.copy(startOnBoot = v) }
+        }
+        // Lets you try PeloSkin, or work on it, away from a Peloton.
+        if (model == BikeModel.NotPeloton) {
+            Toggle("Demo ride (no Peloton found on this device)", demo) { SettingsStore.setDemoRide(it) }
+        }
+    }
+
+    @Composable
+    private fun BackupSettings() {
+        val perms by permissions.collectAsState()
+        var message by remember { mutableStateOf<String?>(null) }
+        if (!perms.files) {
+            PermissionRow("Turn on file access so riders, rides and pictures are saved outside the app.", "Allow") {
+                requestFileAccess()
+            }
+        } else {
+            val file = SettingsStore.backupFile
+            Text(
+                if (file.exists()) "Saved automatically. Last backup ${dateTime(file.lastModified())}."
+                else "No backup yet. One is written whenever something changes.",
+                color = Ink, style = bodyStyle,
+            )
+            Text(file.parentFile?.path ?: file.path, color = Muted, style = smallStyle)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                GhostButton(onClick = {
+                    message = if (SettingsStore.backup()) "Backed up" else "Couldn't write the backup file"
+                }) { Text("Back up now") }
+                GhostButton(onClick = {
+                    message = if (SettingsStore.restore()) "Restored from backup" else "No backup file found"
+                }) { Text("Restore") }
+            }
+        }
+        message?.let { Text(it, color = Accent, style = bodyStyle) }
+    }
+
+    // ------------------------------------------------------------ helpers
+
     /** A past ride as a summary card. Records it still holds get a PR badge. */
     private fun historyView(rider: Profile, ride: RideSummary): FinishedRide {
         val held = rider.records.efforts.filterValues { it.startedAt == ride.startedAt }
@@ -455,7 +684,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun SummaryDialog(f: FinishedRide, units: Units, onClose: () -> Unit) {
+    private fun SummaryDialog(f: FinishedRide, units: Units, rider: RiderBadge?, onClose: () -> Unit) {
         // Past rides load their graph from storage.
         var detail by remember(f) { mutableStateOf(f.detail) }
         LaunchedEffect(f) {
@@ -466,7 +695,8 @@ class MainActivity : ComponentActivity() {
                 Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null, onClick = onClose),
                 contentAlignment = Alignment.Center,
             ) {
-                RideSummaryCard(f.copy(detail = detail), units, Modifier.verticalScroll(rememberScrollState()), footer = "Tap anywhere to close")
+                RideSummaryCard(f.copy(detail = detail), units, Modifier.verticalScroll(rememberScrollState()),
+                    footer = "Tap anywhere to close", rider = rider)
             }
         }
     }
@@ -479,6 +709,11 @@ class MainActivity : ComponentActivity() {
 
     private fun date(t: Long) = SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(t))
     private fun dateTime(t: Long) = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(t))
+
+    private companion object {
+        /** [editing] value for a rider that doesn't exist yet. */
+        const val NewRider = ""
+    }
 }
 
 private val bodyStyle = TextStyle(fontFamily = Figtree, fontSize = 16.sp)
@@ -486,14 +721,39 @@ private val labelStyle = TextStyle(fontFamily = Figtree, fontWeight = FontWeight
 private val smallStyle = TextStyle(fontFamily = Figtree, fontSize = 13.sp)
 private val titleStyle = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = 20.sp)
 
+/** A group heading between cards. */
 @Composable
-private fun Section(name: String, content: @Composable () -> Unit) {
+private fun Heading(text: String) = Text(
+    text.uppercase(), color = Muted, modifier = Modifier.padding(top = 8.dp),
+    style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, letterSpacing = 1.8.sp),
+)
+
+/** A heading inside a card. */
+@Composable
+private fun SubHeading(text: String) = Text(
+    text.uppercase(), color = Accent,
+    style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = 13.sp, letterSpacing = 1.5.sp),
+)
+
+@Composable
+private fun Divider() = Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(Line))
+
+@Composable
+private fun Section(name: String?, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().background(Card, RoundedCornerShape(10.dp)).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier.fillMaxWidth().background(Card, RoundedCornerShape(10.dp)).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(name.uppercase(), color = Accent, style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium,
-            fontSize = 13.sp, letterSpacing = 1.5.sp))
+        name?.let { SubHeading(it) }
+        content()
+    }
+}
+
+/** A setting's label above its control. */
+@Composable
+private fun Field(label: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, color = Muted, style = bodyStyle)
         content()
     }
 }
@@ -510,7 +770,7 @@ private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
 private fun <T> Choice(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         options.forEach { (value, label) ->
-            if (value == selected) Button(onClick = {}, colors = ButtonDefaults.buttonColors(backgroundColor = Accent)) { Text(label) }
+            if (value == selected) PrimaryButton(onClick = {}) { Text(label) }
             else GhostButton(onClick = { onSelect(value) }) { Text(label) }
         }
     }
@@ -524,6 +784,12 @@ private fun PermissionRow(text: String, action: String, onClick: () -> Unit) {
         GhostButton(onClick = onClick) { Text(action) }
     }
 }
+
+@Composable
+private fun PrimaryButton(onClick: () -> Unit, enabled: Boolean = true, content: @Composable () -> Unit) = Button(
+    onClick = onClick, enabled = enabled,
+    colors = ButtonDefaults.buttonColors(backgroundColor = Accent, contentColor = Color(0xFF0E1012)),
+) { content() }
 
 @Composable
 private fun GhostButton(onClick: () -> Unit, content: @Composable () -> Unit) = OutlinedButton(

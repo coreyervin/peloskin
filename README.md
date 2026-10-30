@@ -2,58 +2,75 @@
 
 # PeloSkin
 
-**Peloton-style ride metrics on your Peloton bike's own screen, without an All-Access membership.**
+**Your ride metrics and rider profiles on your Peloton bike's screen, over any app you ride to.**
 
 ![Android 8+](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7f52ff?logo=kotlin&logoColor=white)
 ![APK size](https://img.shields.io/badge/APK-under%201%20MB-41c7c7)
 ![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)
 
-<img src="docs/full.png" alt="PeloSkin full layout: cadence, output and resistance with averages and bests, a power zone bar, and a strip with speed, distance, total output and calories" width="100%">
+<img src="docs/demo.gif" alt="PeloSkin over a spin class: the full metrics layout, a tap to shrink it to a single line, switching rider with the picture bubble, then holding the skin to end the ride and the summary card that follows" width="100%">
 
 </div>
 
-PeloSkin recreates the Peloton bike's in-class metrics without an All-Access membership. It
-reads the bike's sensors directly and draws a Peloton-style metrics bar over whatever you're
-watching on the tablet.
+Why should your metrics depend on which app is playing your class?
+
+PeloSkin is a metrics skin for the Peloton bike's own tablet. It reads the bike's sensors
+directly and draws Peloton-style numbers over whatever is on the screen. It also keeps each
+rider's FTP, rides and personal records itself, so they stay with the rider whatever app or
+subscription they use.
+
+Ride to the Peloton app with App+, Apple Fitness+ on another screen, a YouTube spin class, or a
+Netflix episode. Your output, zones, records and history look the same and live in one place.
 
 ## Who it's for
 
-PeloSkin is for riding with everything on the bike itself:
-
 - You've unlocked the bike's tablet with [OpenPelo](https://github.com/doudar/OpenPelo) or another
   sideloading tool, so you can install apps on it.
-- You ride along to classes on the tablet: the **Peloton app with App+**, **YouTube**, or any other
-  video or class app you can install.
-- Or you follow classes on another screen, like **Apple Fitness+** on an Apple TV or iPad, and
-  want your numbers on the bike in front of you.
+- You want Peloton-style metrics without an All-Access membership, or you'd like to keep one
+  record of your riding across every app you use.
+- More than one person rides the bike, and each wants their own FTP, history and PRs.
 
-**It doesn't send your numbers anywhere else.** It won't feed Zwift, a watch, or the Peloton
-app on another device. If you need your bike to act as a Bluetooth sensor for other devices,
-use [Grupetto](https://github.com/doudar/grupetto). That's what it's built for.
+Everything runs on the bike itself. **PeloSkin doesn't send your numbers anywhere else.** It
+won't feed Zwift, a watch, or an app on another device. If you need your bike to act as a
+Bluetooth sensor for other devices, use [Grupetto](https://github.com/doudar/grupetto). That's
+what it's built for.
 
 ## Features
+
+**On screen, over any app**
 
 |   |   |
 |---|---|
 | **Full layout** | Cadence, Output and Resistance in big numbers, each with AVG (green ▲ or red ▼ trend arrow) and BEST. Below them is a solid strip with speed, distance, total output (kJ) and calories. |
-| **Tap to switch** | Tap anywhere on the skin to switch between the full layout and a single-line bar, and tap the bar to switch back. |
-| **Hold to end ride** | Press and hold the skin to end your ride and see its summary straight away. There's also an **End ride** button in settings. |
-| **Single-line bar** | One thin line with the numbers you pick. Drag it to the top or bottom edge, and it stays there. |
-| **mph or km/h** | Pick miles or kilometres in settings. Speed and distance follow, and the choice is kept and backed up. |
+| **Single-line bar** | Tap the skin to shrink it to one thin line with the numbers you pick, and tap again to bring the full layout back. Drag the bar to the top or bottom edge, and it stays there. |
 | **Power zones** | A 7-zone bar with your % of FTP, using Peloton's zone boundaries. |
-| **Automatic FTP** | Your FTP is 95% of your best 20-minute average. PeloSkin tracks that on every ride and raises your FTP when you beat it. Easy rides never lower it, and a lower retest is one tap away in your ride history. |
-| **Riders** | Each rider has their own FTP, ride history and records. A bubble with the rider's initials, in their own color, shows who's riding in both layouts; tap it to switch. |
-| **Ride summary** | When a ride ends, a summary card shows total and average output, cadence, distance and calories, an output graph, time in each power zone, your best efforts, and how it compares with your last ride of the same length. Tap any past ride to see it again. |
-| **Personal records** | Best 5-second, 1-minute, 5-minute and 20-minute output, plus best total output for each class length (20, 30, 45 minutes…). A gold banner calls out a new best effort the moment you set it; ride-length records show when the ride ends. |
-| **Ride history** | Keeps each rider's last 100 rides. |
-| **Backup** | Riders, settings, history, records and ride graphs are mirrored to `Documents/PeloSkin`. After a reinstall, riders, history and records come back automatically, and ride graphs are read from the backup folder. |
+| **Hold to end ride** | Press and hold the skin to end your ride and see its summary straight away. There's also an **End ride** button in settings. |
+| **mph or km/h** | Speed and distance in miles or kilometres. |
+
+**Your riding, kept by PeloSkin**
+
+|   |   |
+|---|---|
+| **Riders** | Each rider has a name, a profile picture, and their own FTP, ride history and records. Their picture shows in the skin; tap it to switch rider. |
+| **Ride summary** | When a ride ends: total and average output, cadence, distance and calories, an output graph, time in each power zone, best efforts, and how it compares with your last ride of the same length. Tap any past ride to see it again. |
+| **Personal records** | Best 5-second, 1-minute, 5-minute and 20-minute output, plus best total output for each class length (20, 30, 45 minutes…). A gold banner calls out a new best the moment you set it. |
+| **Automatic FTP** | Your FTP is 95% of your best 20-minute average. PeloSkin tracks it on every ride and raises your FTP when you beat it. Easy rides never lower it, and a lower retest is one tap away. |
+| **Ride history** | Each rider's last 100 rides. |
+| **Backup** | Riders, pictures, settings, history, records and ride graphs are mirrored to `Documents/PeloSkin`, and come back by themselves after a reinstall. |
+
+**Set and forget**
+
+|   |   |
+|---|---|
 | **Starts with the bike** | Starts at boot and after updates, and reconnects to the bike's sensors on its own. If Android restarts it mid-ride, the ride carries on. |
 | **One app** | Reads the bike itself, so there's nothing else to install or keep running. |
 
-<img src="docs/summary.png" alt="PeloSkin ride summary: total output, average output, cadence, distance and calories with changes from the last similar ride, an output graph with the FTP line, time in each power zone, and best 5-second, 1-minute and 5-minute efforts" width="70%">
+<img src="docs/full.png" alt="PeloSkin full layout over a spin class: cadence, output and resistance with averages and bests, a power zone bar, the rider's picture, and a strip with speed, distance, total output and calories" width="100%">
 
-<img src="docs/compact.png" alt="PeloSkin single-line bar showing cadence, output with zone blocks, resistance, speed and total output" width="100%">
+<img src="docs/compact.png" alt="PeloSkin single-line bar over a spin class, with the rider's picture, cadence, output with zone blocks, resistance, speed and total output" width="100%">
+
+<img src="docs/summary.png" alt="PeloSkin ride summary: total output, average output, cadence, distance and calories with changes from the last similar ride, an output graph with the FTP line, time in each power zone, and best 5-second, 1-minute and 5-minute efforts" width="70%">
 
 ## Supported bikes
 
@@ -132,26 +149,37 @@ can run at once, but Grupetto's own overlay will show as well.
   next ride starts once you've stopped pedaling and start again.
 - **Turn it off:** open PeloSkin and tap **Stop**. That also ends the ride in progress. Leaving
   the settings screen doesn't stop the skin.
-- **Add a rider:** in settings under *Riders*, type a name and tap **Add rider**. With more than
-  one rider, a bubble with the rider's initials appears at the left of the full layout's bottom
-  strip and at the start of the single-line bar; tap it to switch. A ride
-  counts for whoever is selected when it ends.
-- **See a ride again:** tap it under *Recent rides* for its summary card. The last 10 rides show
-  at first; tap **Show all** for the rest.
 - **Reaching your class app's buttons:** the full layout covers the bottom of the screen, where
-  the Peloton app puts *End Workout* and the progress bar. Tap the skin once to shrink it first.
+  apps often put their controls. Tap the skin once to shrink it first.
 
-<img src="docs/settings.png" alt="PeloSkin settings screen: start and stop, FTP, layout options, backup and recent rides" width="100%">
+### Riders
+
+- **Switch rider:** tap their picture under *Who's riding* in settings, or tap the picture in the
+  skin to move to the next rider. A ride counts for whoever is selected when it ends.
+- **Add a rider:** tap **+** under *Who's riding*, type a name, and optionally add a picture.
+- **Change a name or picture, or remove a rider:** tap **Edit rider** (or the rider's picture) on
+  their card.
+- **Pictures:** **Choose picture** opens Android's file picker, so put a photo on the tablet
+  first, for example with `adb push me.jpg /sdcard/Download/`. **Take picture** appears if the
+  tablet has a camera app. Pictures are cropped to a square and shown in a circle. A rider without
+  a picture gets their initials on their own color.
+- **See a ride again:** tap it under *Recent rides* on the rider's card for its summary. The last
+  10 rides show at first; tap **Show all** for the rest.
+
+The settings screen puts the skin's on/off switch first, then *Who's riding* with the selected
+rider's card (FTP, records and rides), then the skin's layout, start-up and backup settings.
+
+<img src="docs/settings.png" alt="PeloSkin settings screen: the skin's status and Start button, the riders as pictures with an add button, the selected rider's card with FTP, personal records and recent rides, and skin settings below" width="100%">
 
 ## FTP, the short version
 
 - **Don't know your FTP?** Take a 20-minute FTP test (the Peloton app has one) and go all out
   for the full 20 minutes. If you don't have an FTP yet, it's set when the ride ends.
 - **Already know it?** Type it in under FTP.
-- **Want it to update by itself?** Leave *Raise FTP automatically* on. Any ride whose best
+- **Want it to update by itself?** Leave *Raise FTP when a ride beats it* on. Any ride whose best
   20 minutes beats your FTP raises it, and you'll see a short "New FTP" banner on screen.
 - **Retest came in lower?** Rides never lower FTP on their own, because an easy ride would
-  drag it down. Tap **Use** next to that ride in *Recent rides*.
+  drag it down. Tap **Use FTP** next to that ride in *Recent rides*.
 - Retesting every 6–8 weeks is typical. The settings screen reminds you after 8.
 
 ## Build
@@ -189,7 +217,7 @@ app/src/main/java/app/peloskin/
 ├── data/
 │   ├── bike/            Bike model detection, the feed, and the reader interface
 │   │   └── gen1/        Gen 1 readers: Peloton's sensor service and its older sensor app
-│   └── store/           Settings, ride history, ride graphs, backup and checkpoint files
+│   └── store/           Settings, ride history, ride graphs, rider pictures, backup and checkpoint files
 ├── ui/
 │   ├── overlay/         The skin (full and single-line) and its overlay service
 │   ├── summary/         The after-ride summary card
@@ -211,6 +239,12 @@ broadcasting, use [Grupetto](https://github.com/doudar/grupetto).
 
 **Does it need Grupetto?**
 No. PeloSkin reads the bike through Peloton's own sensor software on the tablet.
+
+**Which apps does it work with?**
+Anything that runs on the tablet: the Peloton app (App+), YouTube, a browser, a video player or
+streaming app. PeloSkin doesn't know or care what's playing; it draws on top. If your class is on
+another screen, like Apple Fitness+ on an Apple TV, PeloSkin can sit over the tablet's home
+screen or anything else you like.
 
 **Why doesn't it show the class timer or cadence and resistance targets?**
 Only the class app knows those. The Peloton app shows its own timer and targets panel, and it
@@ -242,7 +276,7 @@ The backup in `Documents/PeloSkin` stays until you delete it.
 ## Disclaimer
 
 PeloSkin is an independent hobby project. It isn't affiliated with, endorsed by or supported by
-Peloton Interactive, Inc. or Apple Inc. "Peloton" and "Apple Fitness+" are trademarks of their
+Peloton Interactive, Inc., Apple Inc., Google LLC or Netflix, Inc. "Peloton", "Apple Fitness+", "YouTube" and "Netflix" are trademarks of their
 owners and are used here only to describe compatibility. Unlocking your bike's tablet is at your
 own risk. Ride at your own risk.
 

@@ -97,6 +97,7 @@ object SettingsStore {
         val local = read(appFile)
         haveLocal = local != null
         _settings.value = local ?: Settings()
+        RiderPhotos.init(appContext)
         checkBackup()
     }
 
@@ -134,9 +135,13 @@ object SettingsStore {
         backupChecked = true
         prefs.edit().putBoolean("backupChecked", true).apply()
         write(backupFile, _settings.value)
-        // Graphs saved before file access was allowed go into the backup now.
+        // Graphs and pictures saved before file access was allowed go into the backup now.
         copyDetailsToBackup()
+        RiderPhotos.syncWithBackup()
     }
+
+    /** Whether the backup folder has been read and can be written to. */
+    fun backupReady(): Boolean = backupChecked && canUseBackup()
 
     fun update(change: (Settings) -> Settings) {
         val next = synchronized(this) {
@@ -175,14 +180,19 @@ object SettingsStore {
         setActiveProfile(s.profiles[(i + 1) % s.profiles.size].id)
     }
 
-    /** Adds a rider without switching to them, so a ride in progress keeps its rider. */
-    fun addProfile(name: String) {
-        val clean = name.trim().take(20).ifEmpty { return }
+    /**
+     * Adds a rider without switching to them, so a ride in progress keeps its rider.
+     * @return the new rider's id, or null if the name was blank.
+     */
+    fun addProfile(name: String): String? {
+        val clean = name.trim().take(20).ifEmpty { return null }
+        var id = ""
         update { s ->
-            var id = "rider-${System.currentTimeMillis()}"
+            id = "rider-${System.currentTimeMillis()}"
             while (s.profiles.any { it.id == id }) id += "x"
             s.copy(profiles = s.profiles + Profile(id, clean))
         }
+        return id
     }
 
     fun renameProfile(id: String, name: String) {
@@ -198,6 +208,7 @@ object SettingsStore {
             s.copy(profiles = rest, activeProfileId = if (s.activeProfileId == id) rest.first().id else s.activeProfileId)
         }
         io.execute { pruneDetails() }
+        RiderPhotos.prune(_settings.value.profiles.map { it.id }.toSet())
     }
 
     // ------------------------------------------------------------- FTP & rides
@@ -310,6 +321,7 @@ object SettingsStore {
         io.execute { write(appFile, s) }
         backupChecked = true
         prefs.edit().putBoolean("backupChecked", true).apply()
+        RiderPhotos.syncWithBackup(replace = true)
         return true
     }
 
@@ -347,13 +359,15 @@ object SettingsStore {
         false
     }
 
+    private fun writeText(file: File, text: String) = writeBytes(file, text.toByteArray())
+
     /** Writes to a temp file, syncs it, then swaps it in, so a power cut can't leave half a file. */
-    private fun writeText(file: File, text: String) {
+    fun writeBytes(file: File, bytes: ByteArray) {
         file.parentFile?.mkdirs()
         val atomic = AtomicFile(file)
         val out = atomic.startWrite()
         try {
-            out.write(text.toByteArray())
+            out.write(bytes)
             atomic.finishWrite(out)
         } catch (e: Exception) {
             atomic.failWrite(out)

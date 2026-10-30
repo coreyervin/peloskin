@@ -4,9 +4,10 @@ Guidance for AI coding agents and contributors working on PeloSkin.
 
 ## What this project is, and isn't
 
-PeloSkin shows Peloton-style ride metrics over whatever is playing on a Peloton bike's own
-tablet. It's for riders without All-Access who ride along to Peloton App+, YouTube or other
-classes on the tablet, or who follow classes on another screen and want numbers on the bike.
+PeloSkin is a metrics skin for a Peloton bike's own tablet. It shows Peloton-style ride metrics
+over whatever is playing, and keeps each rider's profile (name, picture, FTP, rides, records)
+itself. It's deliberately agnostic about the class app: Peloton App+, YouTube, Apple Fitness+ on
+another screen, a movie. Tracking shouldn't depend on which service the rider uses.
 
 It assumes the bike's tablet is already unlocked with OpenPelo or a similar sideloading tool.
 
@@ -49,6 +50,13 @@ they'd be ceremony. Keep it that way unless it grows a lot.
 - The settings file is version 2. Version 1 (single rider, FTP and rides at the top level) is
   read as one profile. Keep `SettingsJson` able to read every older version.
 - Demo rides show a summary but are never recorded.
+- Rider pictures are files, not settings: `RiderPhotos` keeps a 320 px square JPEG per rider id in
+  `files/photos/` and `Documents/PeloSkin/photos/`, syncs the two once the backup is readable,
+  and prunes pictures of removed riders. The skin, settings and summary card draw them with
+  `RiderAvatar`, which falls back to initials on the rider's color.
+- The settings screen is ordered by how often things are used: skin on/off, *Who's riding*, the
+  selected rider's card (FTP, records, rides), then skin settings. Rider-scoped controls belong
+  in the rider card; shared ones in *Skin settings*.
 - A rider ends a ride by holding the skin (`tapOrHold` in `SkinUi`) or with *End ride* in
   settings (`SkinService.requestEndRide`). Both call `RideTracker.finish(byRider = true)`,
   which waits for pedaling to stop before a new ride can start.

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +38,8 @@ import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.RideDetail
 import app.peloskin.domain.Units
 import app.peloskin.ui.overlay.Figtree
+import app.peloskin.ui.overlay.RiderAvatar
+import app.peloskin.ui.overlay.RiderBadge
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -63,13 +66,18 @@ private fun label(size: Int = 12, color: Color = Dim) =
 
 /** After-ride summary: totals, output graph, time in zones, bests and a comparison. */
 @Composable
-fun RideSummaryCard(f: FinishedRide, units: Units, modifier: Modifier = Modifier, footer: String? = null) {
+fun RideSummaryCard(f: FinishedRide, units: Units, modifier: Modifier = Modifier, footer: String? = null, rider: RiderBadge? = null) {
     val r = f.ride
     Column(
         modifier.widthIn(max = 820.dp).background(Card, RoundedCornerShape(12.dp)).padding(28.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         // Header
+        Row(verticalAlignment = Alignment.CenterVertically) {
+        rider?.let {
+            RiderAvatar(it, Modifier.size(56.dp), fontSize = 22.sp)
+            Spacer(Modifier.width(16.dp))
+        }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("RIDE COMPLETE", style = label(12, Teal))
             Row(verticalAlignment = Alignment.Bottom) {
@@ -84,6 +92,7 @@ fun RideSummaryCard(f: FinishedRide, units: Units, modifier: Modifier = Modifier
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
             }
+        }
         }
 
         // Totals

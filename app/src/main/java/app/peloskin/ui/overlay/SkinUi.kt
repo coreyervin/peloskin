@@ -1,6 +1,7 @@
 package app.peloskin.ui.overlay
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,12 +30,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -46,9 +53,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import app.peloskin.R
 import app.peloskin.data.bike.FeedStatus
+import app.peloskin.data.store.RiderPhotos
 import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.PowerZones
+import app.peloskin.domain.Profile
 import app.peloskin.domain.RideSnapshot
+import app.peloskin.domain.Settings
 import app.peloskin.domain.Units
 import kotlin.math.roundToInt
 import kotlinx.coroutines.coroutineScope
@@ -99,8 +109,11 @@ data class SkinState(
     val rider: RiderBadge? = null,
 )
 
-/** The rider's bubble: initials on their own color, so it's clear at a glance who's riding. */
-data class RiderBadge(val initials: String, val colorIndex: Int)
+/**
+ * The rider's bubble, so it's clear at a glance who's riding: their picture, or their
+ * initials on their own color if they haven't added one.
+ */
+data class RiderBadge(val initials: String, val colorIndex: Int, val photo: ImageBitmap? = null)
 
 /** One color per rider, in the order they were added. */
 val RiderColors = listOf(
@@ -108,6 +121,20 @@ val RiderColors = listOf(
 )
 
 fun riderColor(index: Int) = RiderColors[index % RiderColors.size]
+
+/** Riders' pictures, ready to draw, by rider id. */
+@Composable
+fun rememberRiderPhotos(): Map<String, ImageBitmap> {
+    val photos by RiderPhotos.photos.collectAsState()
+    return remember(photos) { photos.mapValues { it.value.asImageBitmap() } }
+}
+
+/** The bubble for [p], or null if they've been removed. */
+fun Settings.badgeFor(p: Profile?, photos: Map<String, ImageBitmap>): RiderBadge? {
+    val index = profiles.indexOfFirst { it.id == p?.id }
+    if (p == null || index < 0) return null
+    return RiderBadge(p.initials, index, photos[p.id])
+}
 
 private fun SkinState.live() = feed == FeedStatus.Connected
 
@@ -186,15 +213,29 @@ private fun RiderBubble(badge: RiderBadge, s: Scale, diameter: Float, onClick: (
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             // A little extra room around the bubble so it's easy to hit with a finger mid-ride.
             .padding(s.dp(0.5f))
-            .size(s.dp(diameter))
-            .background(riderColor(badge.colorIndex), CircleShape),
-        contentAlignment = Alignment.Center,
+            .size(s.dp(diameter)),
     ) {
-        Text(
-            badge.initials,
-            color = Color(0xFF14161A),
-            style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = s.sp(diameter * 0.42f)),
+        RiderAvatar(badge, Modifier.fillMaxSize(), fontSize = s.sp(diameter * 0.42f))
+    }
+}
+
+/** A rider's picture in a circle, or their initials on their color. Shared with the settings screen. */
+@Composable
+fun RiderAvatar(badge: RiderBadge, modifier: Modifier, fontSize: TextUnit) {
+    val photo = badge.photo
+    if (photo != null) {
+        Image(
+            photo, contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = modifier.clip(CircleShape).border(1.5.dp, riderColor(badge.colorIndex), CircleShape),
         )
+    } else {
+        Box(modifier.background(riderColor(badge.colorIndex), CircleShape), contentAlignment = Alignment.Center) {
+            Text(
+                badge.initials,
+                color = Color(0xFF14161A),
+                style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = fontSize),
+            )
+        }
     }
 }
 
