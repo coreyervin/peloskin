@@ -1,7 +1,6 @@
 package app.peloskin.data.store
 
 import app.peloskin.domain.NewRecord
-import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.RideDetail
 import app.peloskin.domain.RideSummary
 
@@ -15,9 +14,6 @@ data class FinishedRide(
     val previous: RideSummary?,
     val newRecords: List<NewRecord>,
     val newFtp: Int?,
+    /** When the ride ended, by the wall clock. */
+    val finishedAt: Long = System.currentTimeMillis(),
 )
-
-fun NewRecord.label(): String = when (this) {
-    is NewRecord.Effort -> "${PersonalRecords.effortLabel(seconds)} $value W"
-    is NewRecord.ClassLength -> "$minutes-min ride $value kJ"
-}

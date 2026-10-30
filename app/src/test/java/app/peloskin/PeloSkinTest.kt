@@ -279,14 +279,14 @@ class PeloSkinTest {
     @Test fun staleCheckpointBecomesARide() {
         val t = RideTracker()
         repeat(1500) { t.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
-        val (summary, detail) = RideTracker.summaryOf(t.checkpoint(1_500_000L, Boot)!!)!!
+        val (summary, detail) = RideTracker.summaryOf(t.checkpoint(1_500_000L, Boot)!!, ftp = null)!!
         assertEquals(299, detail.powerEvery5s.size) // complete 5-second blocks only
         assertEquals(1499, summary.durationSec)
         assertEquals(200, summary.avgPower)
         assertEquals(200, summary.best20Watts)
         val short = RideTracker()
         repeat(60) { short.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
-        assertNull(RideTracker.summaryOf(short.checkpoint(60_000L, Boot)!!))
+        assertNull(RideTracker.summaryOf(short.checkpoint(60_000L, Boot)!!, ftp = null))
     }
 
     @Test fun resistanceSpikesAreFiltered() {
@@ -343,8 +343,8 @@ class PeloSkinTest {
         assertEquals((55 * 300 + 5 * 600) / 60, ride.bestEfforts[60])
         assertTrue(ride.bestEfforts[300]!! in 180..200)
         assertNull(ride.bestEfforts[1200]) // the ride is only 10 minutes long
-        // One point per 5 seconds, without the idle tail.
-        assertEquals(120, detail.powerEvery5s.size)
+        // One point per complete 5 seconds of the 599-second ride, without the idle tail.
+        assertEquals(119, detail.powerEvery5s.size)
         assertEquals(150, detail.powerEvery5s.first())
     }
 
@@ -507,5 +507,85 @@ class PeloSkinTest {
         assertEquals("km/h", Units.Metric.speedLabel)
         // Older backups without a units field stay in miles.
         assertEquals(Units.Imperial, SettingsJson.decode("""{"version":1}""").units)
+    }
+
+    // --------------------------------------------------------- review fixes
+
+    @Test fun aSampleSpanningSecondsIsSpreadAcrossThem() {
+        var got: Pair<RideSummary, RideDetail>? = null
+        val t = RideTracker(ftp = { 200 }, onRideFinished = { r, d -> got = r to d })
+        var ms = 0L
+        // 400 s at 200 W, with readings 2.5 s apart, as the slower fallback might send.
+        while (ms <= 400_000L) { t.onSample(ms, BikeSample(200f, 90f, 40f, 20f)); ms += 2_500 }
+        t.finish()
+        val (ride, detail) = got!!
+        // Every second is 200 W, so every second is zone 4, and nothing leaks into zone 1.
+        assertEquals(ride.durationSec, ride.zoneSeconds!![3])
+        assertEquals(0, ride.zoneSeconds!![0])
+        assertTrue(detail.powerEvery5s.all { it == 200 })
+        assertEquals(200, ride.bestEfforts[5])
+    }
+
+    @Test fun zonesUseTheFtpOfTheRiderCreditedAtTheEnd() {
+        var ftp = 400
+        var got: RideSummary? = null
+        val t = RideTracker(ftp = { ftp }, onRideFinished = { r, _ -> got = r })
+        repeat(400) { t.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
+        ftp = 200 // the rider was switched before the ride ended
+        t.finish()
+        assertEquals(200, got!!.ftp)
+        assertTrue(got!!.zoneSeconds!![3] >= 398) // 200 W at FTP 200 is zone 4 throughout
+    }
+
+    @Test fun upgradingRebuildsRecordsFromHistory() {
+        val s = SettingsJson.decode(
+            """{"version":1,"rides":[
+               {"startedAt":1,"durationSec":1800,"avgPower":150,"totalKj":270,"best20":190},
+               {"startedAt":2,"durationSec":1810,"avgPower":160,"totalKj":290,"best20":205}]}"""
+        )
+        val records = s.active.records
+        assertEquals(205, records.efforts[1200]!!.value)
+        assertEquals(2L, records.efforts[1200]!!.startedAt)
+        assertEquals(290, records.byLength[30]!!.value)
+    }
+
+    @Test fun oldCheckpointKeepsItsBest20() {
+        val old = """{"bootId":7,"savedAt":1000,"startedAt":5,"lastPedalAt":1000,"elapsed":1300,
+            "elapsedAtLastPedal":1300,"moving":1300,"powerSum":260000,"cadenceSum":117000,"resistanceSum":52000,
+            "energyJ":260000,"distanceMi":7,"bestPower":250,"bestCadence":95,"bestResistance":45,"seconds":1301,
+            "best20":205,"ring":[0]}"""
+        val c = CheckpointJson.decode(old)!!
+        assertEquals(205.0, c.efforts[PersonalRecords.EffortWindows.indexOf(1200)], 0.0)
+        assertEquals(205, RideTracker.summaryOf(c, ftp = null)!!.first.best20Watts)
+    }
+
+    @Test fun anUnusedDefaultRiderTakesTheBackupsName() {
+        val backup = Settings(profiles = listOf(Profile(Profile.FirstId, "Corey", ftp = 230, ftpSetAt = 5L,
+            rides = listOf(RideSummary(3L, 1800, 180, 320, 210)))))
+        val local = Settings(startMode = SkinMode.Compact) // a fresh install, layout changed once
+        val merged = SettingsMerge.merge(local, backup)
+        assertEquals("Corey", merged.active.name)
+        assertEquals(230, merged.active.ftp)
+        assertEquals(SkinMode.Compact, merged.startMode)
+    }
+
+    @Test fun bannerOnlyAnnouncesBeatenRecords() {
+        assertNull(PersonalRecords.banner(null, listOf(NewRecord.Effort(5, 600, previous = null))))
+        assertEquals("New FTP 230", PersonalRecords.banner(230, emptyList()))
+        assertEquals(
+            "New FTP 230  ·  New PR · 5 min 270 W · 30-min ride 320 kJ",
+            PersonalRecords.banner(230, listOf(
+                NewRecord.Effort(300, 270, previous = 250),
+                NewRecord.ClassLength(30, 320, previous = 300),
+                NewRecord.Effort(5, 610, previous = null),
+            )),
+        )
+    }
+
+    @Test fun riderInitials() {
+        assertEquals("C", Profile("a", "Corey").initials)
+        assertEquals("JS", Profile("a", "Jess  Smith").initials)
+        assertEquals("MA", Profile("a", "mary ann lee").initials)
+        assertEquals("?", Profile("a", "   ").initials)
     }
 }

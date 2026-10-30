@@ -27,7 +27,7 @@ A light clean architecture, one Gradle module. Dependencies only point inward:
 |---|---|---|
 | Domain | `app.peloskin.domain` | Plain Kotlin only: no `android.*`, no `org.json`, no imports from `data` or `ui`. Ride tracking, power zones, FTP rules, the speed curve, sample cleanup, settings model. Everything here is unit-tested. |
 | Data | `app.peloskin.data.bike`, `.data.bike.<model>`, `.data.store` | Talks to the outside world: Peloton's sensor software, files, backup. May use Android and domain types. |
-| UI | `app.peloskin.ui.overlay`, `.ui.settings` | Compose overlay windows and the settings screen. May use data and domain. |
+| UI | `app.peloskin.ui.overlay`, `.ui.summary`, `.ui.settings` | Compose overlay windows and the settings screen. May use data and domain. |
 
 There's no DI framework and no per-action use-case classes; the app is small enough that
 they'd be ceremony. Keep it that way unless it grows a lot.
@@ -36,7 +36,10 @@ they'd be ceremony. Keep it that way unless it grows a lot.
 
 - `Settings.profiles` holds each rider (`Profile`): FTP, rides (newest first, max 100) and
   `Records`. Layout and units are shared. `Settings.active` is the rider on the bike.
-- A finished ride is recorded for whoever is active when it ends (`SettingsStore.recordRide`).
+- A finished ride is recorded for whoever is active when it ends (`SettingsStore.recordRide`),
+  and its time in zones uses that rider's FTP: `RideTracker` keeps one entry per second (watts,
+  pedaled) and works out zones and the graph when the ride ends. Adding a rider doesn't
+  switch to them, so a ride in progress keeps its rider.
   That also updates records (`PersonalRecords.apply`), may raise FTP, saves the ride's output
   graph (`RideDetail`, one JSON file per ride under `rides/<profileId>/`), and sets
   `lastFinished` for the summary card.

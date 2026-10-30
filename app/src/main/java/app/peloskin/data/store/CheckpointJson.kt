@@ -1,7 +1,6 @@
 package app.peloskin.data.store
 
 import app.peloskin.domain.PersonalRecords
-import app.peloskin.domain.PowerZones
 import app.peloskin.domain.RideCheckpoint
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,10 +27,10 @@ object CheckpointJson {
         c.best20?.let { put("best20", it) }
         put("ring", JSONArray(c.ring.toList()))
         put("efforts", JSONArray(c.efforts.toList()))
-        put("graph", JSONArray(c.graph.toList()))
-        put("zones", JSONArray(c.zones.toList()))
-        put("pendingIdle", c.pendingIdle)
-        c.ftp?.let { put("ftp", it) }
+        put("watts", JSONArray(c.watts.toList()))
+        // One character per second keeps a long ride's checkpoint small.
+        put("pedaled", c.pedaled.joinToString("") { if (it) "1" else "0" })
+        put("partialPedaled", c.partialPedaled)
     }.toString()
 
     /** @return null if the text isn't a checkpoint. */
@@ -57,13 +56,17 @@ object CheckpointJson {
             seconds = o.getInt("seconds"),
             best20 = if (o.has("best20")) o.getDouble("best20") else null,
             ring = DoubleArray(ring.length()) { ring.getDouble(it) },
-            // Checkpoints from before records existed have none of these; the ride carries on without them.
+            // Checkpoints from before 0.4 have no efforts, only the best 20 minutes; keep that
+            // so a resumed or recovered ride can still raise FTP.
             efforts = o.optJSONArray("efforts")?.let { a -> DoubleArray(a.length()) { a.getDouble(it) } }
-                ?: DoubleArray(PersonalRecords.EffortWindows.size) { -1.0 },
-            graph = o.optJSONArray("graph")?.let { a -> IntArray(a.length()) { a.getInt(it) } } ?: IntArray(0),
-            zones = o.optJSONArray("zones")?.let { a -> IntArray(a.length()) { a.getInt(it) } } ?: IntArray(PowerZones.Count),
-            pendingIdle = o.optInt("pendingIdle", 0),
-            ftp = if (o.has("ftp")) o.getInt("ftp") else null,
+                ?: DoubleArray(PersonalRecords.EffortWindows.size) { i ->
+                    if (PersonalRecords.EffortWindows[i] == 1200 && o.has("best20")) o.getDouble("best20") else -1.0
+                },
+            // Older checkpoints have no per-second record; the ride carries on, its graph and
+            // zones covering only the time after the restart.
+            watts = o.optJSONArray("watts")?.let { a -> IntArray(a.length()) { a.getInt(it) } } ?: IntArray(0),
+            pedaled = o.optString("pedaled").let { str -> BooleanArray(str.length) { str[it] == '1' } },
+            partialPedaled = o.optBoolean("partialPedaled", false),
         )
     } catch (e: Exception) {
         null

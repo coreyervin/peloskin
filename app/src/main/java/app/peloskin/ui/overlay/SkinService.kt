@@ -20,7 +20,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -29,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -126,7 +130,8 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             if (tracker.resume(saved, SystemClock.elapsedRealtime(), bootId())) {
                 ride.value = tracker.snapshot
             } else {
-                RideTracker.summaryOf(saved)?.let { (ride, detail) -> SettingsStore.recordRide(ride, detail) }
+                RideTracker.summaryOf(saved, SettingsStore.settings.value.active.ftp)
+                    ?.let { (ride, detail) -> SettingsStore.recordRide(ride, detail) }
                 SettingsStore.saveCheckpoint(null)
             }
         }
@@ -175,7 +180,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         lifecycleScope.launch {
-            // A newer banner restarts the 15 seconds.
+            // A newer banner restarts the 12 seconds.
             SettingsStore.banner.collectLatest {
                 if (it != null) { delay(12_000); SettingsStore.clearBanner() }
             }
@@ -183,11 +188,21 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         lifecycleScope.launch {
             // Call out a personal best the moment it's beaten, once per effort length per ride.
             val announced = mutableSetOf<Int>()
-            var wasRiding = false
+            // A ride picked back up after a restart already announced its PRs before.
+            val resumed = tracker.snapshot
+            if (resumed.riding) {
+                val records = SettingsStore.settings.value.active.records.efforts
+                resumed.bestEfforts.forEach { (sec, w) -> if (w > (records[sec]?.value ?: Int.MAX_VALUE)) announced += sec }
+            }
+            var wasRiding = resumed.riding
             ride.collect { r ->
-                if (r.riding && !wasRiding) announced.clear()
+                if (r.riding && !wasRiding) {
+                    announced.clear()
+                    // Pedaling into the next class: the last ride's summary has had its moment.
+                    SettingsStore.dismissSummary()
+                }
                 wasRiding = r.riding
-                if (!r.riding || feed.demoActive.value) return@collect
+                if (!r.riding || rideIsDemo) return@collect
                 val records = SettingsStore.settings.value.active.records.efforts
                 for ((seconds, watts) in r.bestEfforts) {
                     val best = records[seconds] ?: continue
@@ -198,6 +213,11 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         lifecycleScope.launch {
+            // A summary from a while ago (say, a ride stopped before the skin last closed)
+            // isn't worth putting over whatever's on screen now.
+            SettingsStore.lastFinished.value?.let {
+                if (System.currentTimeMillis() - it.finishedAt > 5 * 60_000L) SettingsStore.dismissSummary()
+            }
             SettingsStore.lastFinished.collect { finished ->
                 if (finished != null) showSummary(finished) else hideSummary()
             }
@@ -247,6 +267,8 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             SkinMode.Full -> showFull()
             SkinMode.Compact -> showCompact()
         }
+        // Keep an open summary on top of the skin.
+        SettingsStore.lastFinished.value?.let { if (summaryView != null) showSummary(it) }
     }
 
     private fun showFull() {
@@ -301,6 +323,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                     state = skinState(),
                     metrics = settings.compactMetrics,
                     onToggle = { mode.value = SkinMode.Full },
+                    onNextRider = SettingsStore::nextProfile,
                     modifier = Modifier.onSizeChanged { size ->
                         if (params.width != size.width || params.height != size.height) {
                             params.width = size.width
@@ -324,7 +347,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         return SkinState(
             ride = r, feed = f, ftp = active.ftp, banner = banner, units = settings.units,
             // The rider chip only appears once there's more than one rider.
-            riderName = active.name.takeIf { settings.profiles.size > 1 },
+            rider = RiderBadge(active.initials, settings.profiles.indexOf(active)).takeIf { settings.profiles.size > 1 },
         )
     }
 
@@ -364,7 +387,11 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                     .clickable(remember { MutableInteractionSource() }, null) { SettingsStore.dismissSummary() },
                 contentAlignment = Alignment.Center,
             ) {
-                RideSummaryCard(finished, settings.units, footer = "Tap anywhere to close")
+                // Scrolls if it doesn't fit, say with a long rider name.
+                RideSummaryCard(
+                    finished, settings.units, Modifier.padding(vertical = 24.dp).verticalScroll(rememberScrollState()),
+                    footer = "Tap anywhere to close",
+                )
             }
         }
         windows.addView(view, params)

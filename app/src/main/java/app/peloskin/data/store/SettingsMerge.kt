@@ -22,6 +22,12 @@ object SettingsMerge {
     }
 
     private fun mergeProfile(local: Profile, backup: Profile): Profile {
+        // A rider that's never been used (the default one on a fresh install) has nothing of
+        // its own to keep, so the backed-up rider comes back as it was, name and all.
+        val untouched = local.rides.isEmpty() && local.ftp == null && local.records == Records() &&
+            local.name == Profile.first().name
+        if (untouched) return backup
+
         val rides = (local.rides + backup.rides)
             .distinctBy { it.startedAt }
             .sortedByDescending { it.startedAt }

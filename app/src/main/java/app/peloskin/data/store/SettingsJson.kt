@@ -3,6 +3,7 @@ package app.peloskin.data.store
 import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.FtpSource
+import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.Profile
 import app.peloskin.domain.Record
 import app.peloskin.domain.Records
@@ -29,7 +30,7 @@ object SettingsJson {
         put("compactMetrics", JSONArray(s.compactMetrics.map { it.name }))
         put("startOnBoot", s.startOnBoot)
         put("units", s.units.name)
-    }.toString(2)
+    }.toString()
 
     fun decode(text: String): Settings {
         val o = JSONObject(text)
@@ -71,9 +72,10 @@ object SettingsJson {
         val d = fallback ?: Profile.first()
         val rides = o.optJSONArray("rides")?.let { a -> (0 until a.length()).map { decodeRide(a.getJSONObject(it)) } }
             ?: emptyList()
+        // History saved before records existed gets its records worked out from the rides.
         val records = o.optJSONObject("records")?.let {
             Records(decodeRecords(it.optJSONObject("efforts")), decodeRecords(it.optJSONObject("byLength")))
-        } ?: Records()
+        } ?: PersonalRecords.rebuild(rides)
         return Profile(
             id = o.optString("id").ifEmpty { d.id },
             name = o.optString("name").ifEmpty { d.name },

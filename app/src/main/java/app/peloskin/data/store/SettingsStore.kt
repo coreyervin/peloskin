@@ -123,6 +123,7 @@ object SettingsStore {
                 }
                 Log.i(Tag, "Merged settings from backup")
                 write(appFile, merged)
+                pruneDetails()
             } else {
                 // Keep an unreadable backup aside instead of overwriting it.
                 val aside = File(file.parentFile, "peloskin-backup.unreadable-${System.currentTimeMillis()}.json")
@@ -133,6 +134,8 @@ object SettingsStore {
         backupChecked = true
         prefs.edit().putBoolean("backupChecked", true).apply()
         write(backupFile, _settings.value)
+        // Graphs saved before file access was allowed go into the backup now.
+        copyDetailsToBackup()
     }
 
     fun update(change: (Settings) -> Settings) {
@@ -143,9 +146,12 @@ object SettingsStore {
             }
         }
         io.execute {
-            write(appFile, next)
+            // Save what's current when this runs, not `next`: a backup merge may have
+            // happened in between, and writing `next` would undo it.
+            val text = SettingsJson.encode(_settings.value)
+            writeOrLog(appFile, text)
             if (backupChecked) {
-                if (canUseBackup()) write(backupFile, next)
+                if (canUseBackup()) writeOrLog(backupFile, text)
             } else {
                 checkBackupNow()
             }
@@ -169,11 +175,13 @@ object SettingsStore {
         setActiveProfile(s.profiles[(i + 1) % s.profiles.size].id)
     }
 
+    /** Adds a rider without switching to them, so a ride in progress keeps its rider. */
     fun addProfile(name: String) {
         val clean = name.trim().take(20).ifEmpty { return }
         update { s ->
-            val id = "rider-${System.currentTimeMillis()}"
-            s.copy(profiles = s.profiles + Profile(id, clean), activeProfileId = id)
+            var id = "rider-${System.currentTimeMillis()}"
+            while (s.profiles.any { it.id == id }) id += "x"
+            s.copy(profiles = s.profiles + Profile(id, clean))
         }
     }
 
@@ -182,11 +190,14 @@ object SettingsStore {
         update { s -> s.copy(profiles = s.profiles.map { if (it.id == id) it.copy(name = clean) else it }) }
     }
 
-    /** Removes a rider and their history. The last rider can't be removed. */
-    fun deleteProfile(id: String) = update { s ->
-        if (s.profiles.size < 2) return@update s
-        val rest = s.profiles.filter { it.id != id }
-        s.copy(profiles = rest, activeProfileId = if (s.activeProfileId == id) rest.first().id else s.activeProfileId)
+    /** Removes a rider, their history and their ride graphs. The last rider can't be removed. */
+    fun deleteProfile(id: String) {
+        update { s ->
+            if (s.profiles.size < 2) return@update s
+            val rest = s.profiles.filter { it.id != id }
+            s.copy(profiles = rest, activeProfileId = if (s.activeProfileId == id) rest.first().id else s.activeProfileId)
+        }
+        io.execute { pruneDetails() }
     }
 
     // ------------------------------------------------------------- FTP & rides
@@ -222,13 +233,7 @@ object SettingsStore {
         }
         val f = finished ?: return
         io.execute { saveDetail(f.profileId, detail) }
-        // Only records that beat an earlier one count; on a first ride everything is "new".
-        val prs = f.newRecords.filter { it.previous != null }
-        val parts = listOfNotNull(
-            f.newFtp?.let { "New FTP $it" },
-            prs.takeIf { it.isNotEmpty() }?.let { "New PR · " + it.joinToString(" · ") { r -> r.label() } },
-        )
-        if (parts.isNotEmpty()) showBanner(parts.joinToString("  ·  "))
+        PersonalRecords.banner(f.newFtp, f.newRecords)?.let(::showBanner)
         _lastFinished.value = f
     }
 
@@ -262,11 +267,28 @@ object SettingsStore {
         pruneDetails()
     }
 
-    /** Graphs for rides that have dropped out of history aren't needed any more. */
+    /**
+     * Graphs for rides that have dropped out of history, or belong to a removed rider, aren't
+     * needed any more, in either folder. Runs on [io], after the settings that reference them.
+     */
     private fun pruneDetails() {
         val keep = _settings.value.profiles.flatMap { p -> p.rides.map { "${p.id}/${it.startedAt}.json" } }.toSet()
+        val dirs = listOfNotNull(appRidesDir, backupRidesDir.takeIf { backupChecked && canUseBackup() })
+        for (dir in dirs) {
+            dir.listFiles()?.forEach { profileDir ->
+                profileDir.listFiles()?.forEach { f -> if ("${profileDir.name}/${f.name}" !in keep) f.delete() }
+                if (profileDir.listFiles()?.isEmpty() == true) profileDir.delete()
+            }
+        }
+    }
+
+    private fun copyDetailsToBackup() {
+        if (!canUseBackup()) return
         appRidesDir.listFiles()?.forEach { profileDir ->
-            profileDir.listFiles()?.forEach { f -> if ("${profileDir.name}/${f.name}" !in keep) f.delete() }
+            profileDir.listFiles()?.forEach { f ->
+                val target = File(backupRidesDir, "${profileDir.name}/${f.name}")
+                if (!target.exists()) runCatching { writeText(target, AtomicFile(f).readFully().decodeToString()) }
+            }
         }
     }
 
@@ -315,8 +337,10 @@ object SettingsStore {
         null
     }
 
-    private fun write(file: File, s: Settings): Boolean = try {
-        writeText(file, SettingsJson.encode(s))
+    private fun write(file: File, s: Settings): Boolean = writeOrLog(file, SettingsJson.encode(s))
+
+    private fun writeOrLog(file: File, text: String): Boolean = try {
+        writeText(file, text)
         true
     } catch (e: Exception) {
         Log.w(Tag, "Could not write ${file.path}", e)

@@ -85,6 +85,7 @@ import app.peloskin.domain.SkinMode
 import app.peloskin.domain.Units
 import app.peloskin.ui.overlay.Figtree
 import app.peloskin.ui.overlay.SkinService
+import app.peloskin.ui.overlay.riderColor
 import app.peloskin.ui.summary.RideSummaryCard
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -149,6 +150,7 @@ class MainActivity : ComponentActivity() {
         val lastFinished by SettingsStore.lastFinished.collectAsState()
         var message by remember { mutableStateOf<String?>(null) }
         var viewing by remember { mutableStateOf<FinishedRide?>(null) }
+        var allRides by remember { mutableStateOf(false) }
         val rider = settings.active
 
         // A ride that ended with the skin stopped has no overlay to show its summary, so show it here.
@@ -278,7 +280,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         Text("Tap a ride to see its summary.", color = Muted, style = smallStyle)
                     }
-                    rider.rides.take(10).forEach { r ->
+                    rider.rides.take(if (allRides) Settings.MaxRides else 10).forEach { r ->
                         Row(
                             Modifier.clickable { viewing = historyView(rider, r) }.padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -298,6 +300,11 @@ class MainActivity : ComponentActivity() {
                                     GhostButton(onClick = { SettingsStore.useRideForFtp(r) }) { Text("Use") }
                                 }
                             }
+                        }
+                    }
+                    if (rider.rides.size > 10) {
+                        GhostButton(onClick = { allRides = !allRides }) {
+                            Text(if (allRides) "Show fewer" else "Show all ${rider.rides.size} rides")
                         }
                     }
                 }
@@ -344,15 +351,20 @@ class MainActivity : ComponentActivity() {
         // Starts with the whole current name selected, so typing replaces it.
         var renameText by remember { mutableStateOf(TextFieldValue("")) }
         var removing by remember { mutableStateOf<Profile?>(null) }
-        Text("Each rider has their own FTP, rides and records. Tap a name to switch, or tap the name chip on the skin.",
+        Text("Each rider has their own FTP, rides and records. Tap a name to switch, or tap the rider's bubble on the skin.",
             color = Muted, style = smallStyle)
-        settings.profiles.forEach { p ->
+        settings.profiles.forEachIndexed { index, p ->
             val active = p.id == settings.active.id
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(
                     Modifier.size(14.dp).border(2.dp, if (active) Accent else Muted, CircleShape).padding(3.dp)
                         .background(if (active) Accent else Color.Transparent, CircleShape)
                 )
+                // The same bubble the skin shows for this rider.
+                Box(Modifier.size(32.dp).background(riderColor(index), CircleShape), contentAlignment = Alignment.Center) {
+                    Text(p.initials, color = Color(0xFF14161A),
+                        style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = 14.sp))
+                }
                 if (renaming == p.id) {
                     val focus = remember { FocusRequester() }
                     val save = { SettingsStore.renameProfile(p.id, renameText.text); renaming = null }

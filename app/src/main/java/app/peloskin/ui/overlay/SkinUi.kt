@@ -88,8 +88,18 @@ data class SkinState(
     val banner: String?,
     val units: Units = Units.Imperial,
     /** Who's riding, when there's more than one rider. */
-    val riderName: String? = null,
+    val rider: RiderBadge? = null,
 )
+
+/** The rider's bubble: initials on their own color, so it's clear at a glance who's riding. */
+data class RiderBadge(val initials: String, val colorIndex: Int)
+
+/** One color per rider, in the order they were added. */
+val RiderColors = listOf(
+    Color(0xFF41C7C7), Color(0xFFFF7A6B), Color(0xFFB48CFF), Color(0xFFE6B422), Color(0xFF3FD28B), Color(0xFF5B8DB8),
+)
+
+fun riderColor(index: Int) = RiderColors[index % RiderColors.size]
 
 private fun SkinState.live() = feed == FeedStatus.Connected
 
@@ -154,23 +164,28 @@ fun FullSkin(state: SkinState, onToggle: () -> Unit, onNextRider: () -> Unit = {
             }
         }
         // Tapping the chip switches rider; it takes the tap so the layout doesn't switch too.
-        state.riderName?.let { RiderChip(it, s, onNextRider, Modifier.padding(start = s.dp(1.6f))) }
+        state.rider?.let { RiderBubble(it, s, diameter = 2.5f, onClick = onNextRider, modifier = Modifier.padding(start = s.dp(1.4f))) }
         }
     }
 }
 
+/** Tapping the bubble switches rider. It takes the tap, so the layout doesn't switch too. */
 @Composable
-private fun RiderChip(name: String, s: Scale, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Row(
+private fun RiderBubble(badge: RiderBadge, s: Scale, diameter: Float, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
         modifier
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(s.dp(1.2f)))
-            .padding(horizontal = s.dp(0.9f), vertical = s.dp(0.45f)),
-        verticalAlignment = Alignment.CenterVertically,
+            // A little extra room around the bubble so it's easy to hit with a finger mid-ride.
+            .padding(s.dp(0.5f))
+            .size(s.dp(diameter))
+            .background(riderColor(badge.colorIndex), CircleShape),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(s.dp(0.5f)).background(ZoneOn, CircleShape))
-        Spacer(Modifier.width(s.dp(0.5f)))
-        Label(name, s, size = 0.72f)
+        Text(
+            badge.initials,
+            color = Color(0xFF14161A),
+            style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.SemiBold, fontSize = s.sp(diameter * 0.42f)),
+        )
     }
 }
 
@@ -320,7 +335,13 @@ private fun StripDivider(s: Scale) = Box(Modifier.width(1.dp).height(s.dp(2.4f))
 
 /** One-line bar: tap anywhere on it to go back to the full layout, drag it to move it. */
 @Composable
-fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+fun CompactSkin(
+    state: SkinState,
+    metrics: List<CompactMetric>,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    onNextRider: () -> Unit = {},
+) {
     val s = rememberScale()
     val live = state.live()
     val r = state.ride
@@ -331,6 +352,7 @@ fun CompactSkin(state: SkinState, metrics: List<CompactMetric>, onToggle: () -> 
             .padding(horizontal = s.dp(1.2f), vertical = s.dp(0.7f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        state.rider?.let { RiderBubble(it, s, diameter = 1.7f, onClick = onNextRider) }
         if (!live) {
             Text(
                 when (state.feed) {

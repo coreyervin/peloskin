@@ -12,6 +12,11 @@ data class Profile(
     val rides: List<RideSummary> = emptyList(),
     val records: Records = Records(),
 ) {
+    /** One or two letters for the rider's bubble: "Corey" → "C", "Jess Smith" → "JS". */
+    val initials: String
+        get() = name.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.take(2)
+            .joinToString("") { it.first().uppercase() }.ifEmpty { "?" }
+
     companion object {
         const val FirstId = "rider-1"
         fun first() = Profile(FirstId, "Rider 1")
@@ -78,6 +83,23 @@ object PersonalRecords {
         return Records(efforts, byLength) to broken
     }
 
+    /** Works records out from scratch, for history saved before records existed. */
+    fun rebuild(rides: List<RideSummary>): Records =
+        rides.sortedBy { it.startedAt }.fold(Records()) { records, ride -> apply(records, ride).first }
+
+    /**
+     * The banner text for a finished ride, or null if there's nothing to announce. Only
+     * records that beat an earlier one count, so a rider's first ride isn't all "PR"s.
+     */
+    fun banner(newFtp: Int?, broken: List<NewRecord>): String? {
+        val prs = broken.filter { it.previous != null }
+        val parts = listOfNotNull(
+            newFtp?.let { "New FTP $it" },
+            prs.takeIf { it.isNotEmpty() }?.let { "New PR · " + it.joinToString(" · ") { r -> r.label() } },
+        )
+        return parts.takeIf { it.isNotEmpty() }?.joinToString("  ·  ")
+    }
+
     /** The most recent earlier ride of the same class length, for comparing. */
     fun previousSimilar(rides: List<RideSummary>, ride: RideSummary): RideSummary? {
         val length = classLength(ride.durationSec)
@@ -89,4 +111,9 @@ object PersonalRecords {
             }
         }
     }
+}
+
+fun NewRecord.label(): String = when (this) {
+    is NewRecord.Effort -> "${PersonalRecords.effortLabel(seconds)} $value W"
+    is NewRecord.ClassLength -> "$minutes-min ride $value kJ"
 }

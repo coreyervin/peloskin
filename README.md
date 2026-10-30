@@ -42,11 +42,11 @@ use [Grupetto](https://github.com/doudar/grupetto). That's what it's built for.
 | **mph or km/h** | Pick miles or kilometres in settings. Speed and distance follow, and the choice is kept and backed up. |
 | **Power zones** | A 7-zone bar with your % of FTP, using Peloton's zone boundaries. |
 | **Automatic FTP** | Your FTP is 95% of your best 20-minute average. PeloSkin tracks that on every ride and raises your FTP when you beat it. Easy rides never lower it, and a lower retest is one tap away in your ride history. |
-| **Riders** | Each rider has their own FTP, ride history and records. Tap the name chip on the skin to switch who's riding. |
+| **Riders** | Each rider has their own FTP, ride history and records. A bubble with the rider's initials, in their own color, shows who's riding in both layouts; tap it to switch. |
 | **Ride summary** | When a ride ends, a summary card shows total and average output, cadence, distance and calories, an output graph, time in each power zone, your best efforts, and how it compares with your last ride of the same length. Tap any past ride to see it again. |
-| **Personal records** | Best 5-second, 1-minute, 5-minute and 20-minute output, plus best total output for each class length (20, 30, 45 minutes…). A gold banner calls out a new PR the moment you set it. |
+| **Personal records** | Best 5-second, 1-minute, 5-minute and 20-minute output, plus best total output for each class length (20, 30, 45 minutes…). A gold banner calls out a new best effort the moment you set it; ride-length records show when the ride ends. |
 | **Ride history** | Keeps each rider's last 100 rides. |
-| **Backup** | Riders, settings, history, records and ride graphs are mirrored to `Documents/PeloSkin`, and restored automatically after a reinstall. |
+| **Backup** | Riders, settings, history, records and ride graphs are mirrored to `Documents/PeloSkin`. After a reinstall, riders, history and records come back automatically, and ride graphs are read from the backup folder. |
 | **Starts with the bike** | Starts at boot and after updates, and reconnects to the bike's sensors on its own. If Android restarts it mid-ride, the ride carries on. |
 | **One app** | Reads the bike itself, so there's nothing else to install or keep running. |
 
@@ -128,9 +128,11 @@ can run at once, but Grupetto's own overlay will show as well.
 - **Turn it off:** open PeloSkin and tap **Stop**. Leaving the settings screen doesn't stop the
   skin.
 - **Add a rider:** in settings under *Riders*, type a name and tap **Add rider**. With more than
-  one rider, a name chip appears at the left of the skin's bottom strip; tap it to switch. A ride
+  one rider, a bubble with the rider's initials appears at the left of the full layout's bottom
+  strip and at the start of the single-line bar; tap it to switch. A ride
   counts for whoever is selected when it ends.
-- **See a ride again:** tap it under *Recent rides* for its summary card.
+- **See a ride again:** tap it under *Recent rides* for its summary card. The last 10 rides show
+  at first; tap **Show all** for the rest.
 - **Reaching your class app's buttons:** the full layout covers the bottom of the screen, where
   the Peloton app puts *End Workout* and the progress bar. Tap the skin once to shrink it first.
 
