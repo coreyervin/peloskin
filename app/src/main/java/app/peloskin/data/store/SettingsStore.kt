@@ -45,11 +45,16 @@ object SettingsStore {
         prefs.edit().putBoolean("demoRide", on).apply()
     }
 
-    /** A short message for the skin: a new FTP, a new PR, or who's riding now. */
-    private val _banner = MutableStateFlow<String?>(null)
-    val banner: StateFlow<String?> = _banner
+    /**
+     * A short message for the skin: a new FTP, a new PR, or who's riding now. [riderSwitch]
+     * marks "Riding as …", which the full layout leaves to its rider bubble.
+     */
+    data class Banner(val text: String, val riderSwitch: Boolean = false)
 
-    fun showBanner(text: String) { _banner.value = text }
+    private val _banner = MutableStateFlow<Banner?>(null)
+    val banner: StateFlow<Banner?> = _banner
+
+    fun showBanner(text: String, riderSwitch: Boolean = false) { _banner.value = Banner(text, riderSwitch) }
     fun clearBanner() { _banner.value = null }
 
     /** The ride that just ended, for the summary card. Cleared once it's been seen. */
@@ -169,7 +174,7 @@ object SettingsStore {
         val current = _settings.value
         if (current.activeProfileId == id || current.profiles.none { it.id == id }) return
         update { it.copy(activeProfileId = id) }
-        showBanner("Riding as ${_settings.value.active.name}")
+        showBanner("Riding as ${_settings.value.active.name}", riderSwitch = true)
     }
 
     /** Switches to the next rider, for the chip on the skin. */

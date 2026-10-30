@@ -372,7 +372,8 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         val photos = rememberRiderPhotos()
         val active = settings.active
         return SkinState(
-            ride = r, feed = f, ftp = active.ftp, banner = banner, units = settings.units,
+            ride = r, feed = f, ftp = active.ftp, banner = banner?.text, units = settings.units,
+            riderSwitchBanner = banner?.riderSwitch == true,
             // A lone rider without a picture doesn't need a bubble saying who's riding.
             rider = settings.badgeFor(active, photos).takeIf { settings.profiles.size > 1 || it?.photo != null },
         )

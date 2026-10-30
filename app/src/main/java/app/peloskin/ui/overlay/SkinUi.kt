@@ -107,6 +107,8 @@ data class SkinState(
     val units: Units = Units.Imperial,
     /** Who's riding, when there's more than one rider. */
     val rider: RiderBadge? = null,
+    /** [banner] is "Riding as …". The full layout skips it, since its rider bubble already shows who. */
+    val riderSwitchBanner: Boolean = false,
 )
 
 /**
@@ -269,8 +271,9 @@ private fun StatusLine(state: SkinState, hold: HoldState, s: Scale) {
         HoldPrompt(it, s, Modifier.padding(bottom = s.dp(0.8f)))
         return
     }
+    val banner = state.banner?.takeUnless { state.riderSwitchBanner }
     val text = when {
-        state.banner != null -> state.banner
+        banner != null -> banner
         state.feed == FeedStatus.NotFound -> "Can't read the bike · is the sensor cable connected?"
         state.feed == FeedStatus.Unsupported -> "This bike isn't supported yet"
         state.feed == FeedStatus.Connecting -> "Connecting to the bike…"
@@ -278,7 +281,7 @@ private fun StatusLine(state: SkinState, hold: HoldState, s: Scale) {
     } ?: return
     Text(
         text,
-        color = if (state.banner != null) Gold else Dim,
+        color = if (banner != null) Gold else Dim,
         modifier = Modifier.padding(bottom = s.dp(0.8f)),
         style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = s.sp(0.9f)),
     )
