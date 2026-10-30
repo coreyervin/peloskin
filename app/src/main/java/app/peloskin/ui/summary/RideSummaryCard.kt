@@ -38,6 +38,7 @@ import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.RideDetail
 import app.peloskin.domain.Units
 import app.peloskin.ui.overlay.Figtree
+import app.peloskin.ui.overlay.HeartRateZoneColors
 import app.peloskin.ui.overlay.RiderAvatar
 import app.peloskin.ui.overlay.RiderBadge
 import java.text.SimpleDateFormat
@@ -54,6 +55,7 @@ private val Teal = Color(0xFF41C7C7)
 private val Gold = Color(0xFFE6B422)
 private val Up = Color(0xFF3FD28B)
 private val Down = Color(0xFFFF4A55)
+private val HeartRed = Color(0xFFFF4A55)
 
 /** Zone colors, cool to warm, so harder zones read hotter at a glance. */
 private val ZoneColors = listOf(
@@ -103,6 +105,7 @@ fun RideSummaryCard(f: FinishedRide, units: Units, modifier: Modifier = Modifier
             BigStat("Avg cadence", r.avgCadence.orDash(), "rpm", null)
             BigStat("Distance", if (r.distanceMi > 0f) "%.2f".format(units.distance(r.distanceMi)) else "--", units.distanceLabel, null)
             BigStat("Calories", r.calories.orDash(), "kcal", null)
+            r.avgHeartRate?.let { BigStat("Avg heart rate", it.toString(), "bpm", null) }
         }
         f.previous?.let { p ->
             Text(
@@ -123,6 +126,17 @@ fun RideSummaryCard(f: FinishedRide, units: Units, modifier: Modifier = Modifier
             }
         }
 
+        // Heart rate graph, for rides with a monitor
+        f.detail?.heartRateEvery5s?.takeIf { hr -> hr.count { it > 0 } >= 2 }?.let { hr ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "HEART RATE" + listOfNotNull(r.avgHeartRate?.let { " · AVG $it" }, r.maxHeartRate?.let { " · MAX $it BPM" }).joinToString(""),
+                    style = label(),
+                )
+                HeartRateGraph(hr, Modifier.fillMaxWidth().height(90.dp))
+            }
+        }
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
             // Time in zones
             r.zoneSeconds?.let { z ->
@@ -130,6 +144,12 @@ fun RideSummaryCard(f: FinishedRide, units: Units, modifier: Modifier = Modifier
                     Text("TIME IN ZONES${r.ftp?.let { " · FTP $it" } ?: ""}", style = label())
                     val longest = (z.maxOrNull() ?: 0).coerceAtLeast(1)
                     z.forEachIndexed { i, sec -> ZoneRow(i + 1, sec, longest) }
+                    r.heartRateZoneSeconds?.let { hz ->
+                        Spacer(Modifier.height(6.dp))
+                        Text("HEART RATE ZONES${r.maxHr?.let { " · MAX $it" } ?: ""}", style = label())
+                        val longestHr = (hz.maxOrNull() ?: 0).coerceAtLeast(1)
+                        hz.forEachIndexed { i, sec -> ZoneRow(i + 1, sec, longestHr, HeartRateZoneColors[i]) }
+                    }
                 }
             }
             // Bests
@@ -202,8 +222,31 @@ private fun OutputGraph(d: RideDetail, ftp: Int?, modifier: Modifier) {
     }
 }
 
+/** Heart rate for each 5 seconds; gaps without a reading are left out of the line. */
 @Composable
-private fun ZoneRow(zone: Int, seconds: Int, longest: Int) {
+private fun HeartRateGraph(points: List<Int>, modifier: Modifier) {
+    val beats = points.filter { it > 0 }
+    val low = (beats.min() - 10).coerceAtLeast(40).toFloat()
+    val high = (beats.max() + 10).toFloat()
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        fun x(i: Int) = i * w / (points.size - 1).coerceAtLeast(1)
+        fun y(bpm: Int) = h - (bpm - low) / (high - low) * h
+        for (k in 1..2) drawLine(Rule, Offset(0f, h * k / 3), Offset(w, h * k / 3), strokeWidth = 1f)
+        val line = Path()
+        var drawing = false
+        points.forEachIndexed { i, bpm ->
+            if (bpm <= 0) { drawing = false; return@forEachIndexed }
+            if (drawing) line.lineTo(x(i), y(bpm)) else line.moveTo(x(i), y(bpm))
+            drawing = true
+        }
+        drawPath(line, HeartRed, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+@Composable
+private fun ZoneRow(zone: Int, seconds: Int, longest: Int, color: Color = ZoneColors[zone - 1]) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Z$zone", style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = 13.sp, color = Dim),
             modifier = Modifier.width(28.dp))
@@ -211,7 +254,7 @@ private fun ZoneRow(zone: Int, seconds: Int, longest: Int) {
             if (seconds > 0) {
                 Box(
                     Modifier.fillMaxWidth(seconds.toFloat() / longest).height(10.dp)
-                        .background(ZoneColors[zone - 1], RoundedCornerShape(3.dp))
+                        .background(color, RoundedCornerShape(3.dp))
                 )
             }
         }

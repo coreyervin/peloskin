@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.core.util.AtomicFile
 import app.peloskin.domain.Ftp
 import app.peloskin.domain.FtpSource
+import app.peloskin.domain.HeartRateMonitor
 import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.Profile
 import app.peloskin.domain.RideCheckpoint
@@ -214,6 +215,17 @@ object SettingsStore {
         }
         io.execute { pruneDetails() }
         RiderPhotos.prune(_settings.value.profiles.map { it.id }.toSet())
+    }
+
+    // ------------------------------------------------------------- heart rate
+
+    /** Pairs [monitor] with a rider, or forgets theirs when null. */
+    fun setHeartRateMonitor(profileId: String, monitor: HeartRateMonitor?) = update { s ->
+        s.copy(profiles = s.profiles.map { if (it.id == profileId) it.copy(heartRateMonitor = monitor) else it })
+    }
+
+    fun setMaxHr(profileId: String, maxHr: Int?) = update { s ->
+        s.copy(profiles = s.profiles.map { if (it.id == profileId) it.copy(maxHr = maxHr?.takeIf { m -> m in 100..240 }) else it })
     }
 
     // ------------------------------------------------------------- FTP & rides

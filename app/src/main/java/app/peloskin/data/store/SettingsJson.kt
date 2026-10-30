@@ -3,6 +3,7 @@ package app.peloskin.data.store
 import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.FtpSource
+import app.peloskin.domain.HeartRateMonitor
 import app.peloskin.domain.Lifetime
 import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.Profile
@@ -66,6 +67,8 @@ object SettingsJson {
             put("efforts", encodeRecords(p.records.efforts))
             put("byLength", encodeRecords(p.records.byLength))
         })
+        p.heartRateMonitor?.let { put("heartRateMonitor", JSONObject().put("address", it.address).put("name", it.name)) }
+        p.maxHr?.let { put("maxHr", it) }
         put("lifetime", JSONObject().apply {
             put("rides", p.lifetime.rides)
             put("seconds", p.lifetime.seconds)
@@ -98,6 +101,10 @@ object SettingsJson {
             rides = rides,
             records = records,
             lifetime = lifetime,
+            heartRateMonitor = o.optJSONObject("heartRateMonitor")?.let { m ->
+                m.optString("address").takeIf { it.isNotEmpty() }?.let { HeartRateMonitor(it, m.optString("name")) }
+            },
+            maxHr = if (o.has("maxHr")) o.getInt("maxHr").takeIf { it in 100..240 } else null,
         )
     }
 
@@ -114,6 +121,10 @@ object SettingsJson {
         put("efforts", JSONObject().apply { r.bestEfforts.forEach { (sec, w) -> put(sec.toString(), w) } })
         r.zoneSeconds?.let { put("zones", JSONArray(it)) }
         r.ftp?.let { put("ftp", it) }
+        r.avgHeartRate?.let { put("avgHr", it) }
+        r.maxHeartRate?.let { put("maxHeartRate", it) }
+        r.heartRateZoneSeconds?.let { put("hrZones", JSONArray(it)) }
+        r.maxHr?.let { put("maxHr", it) }
     }
 
     private fun decodeRide(r: JSONObject): RideSummary {
@@ -134,6 +145,10 @@ object SettingsJson {
             bestEfforts = efforts.ifEmpty { if (r.has("best20")) mapOf(1200 to r.getInt("best20")) else emptyMap() },
             zoneSeconds = r.optJSONArray("zones")?.let { z -> (0 until z.length()).map { z.getInt(it) } },
             ftp = if (r.has("ftp")) r.getInt("ftp") else null,
+            avgHeartRate = if (r.has("avgHr")) r.getInt("avgHr") else null,
+            maxHeartRate = if (r.has("maxHeartRate")) r.getInt("maxHeartRate") else null,
+            heartRateZoneSeconds = r.optJSONArray("hrZones")?.let { z -> (0 until z.length()).map { z.getInt(it) } },
+            maxHr = if (r.has("maxHr")) r.getInt("maxHr") else null,
         )
     }
 

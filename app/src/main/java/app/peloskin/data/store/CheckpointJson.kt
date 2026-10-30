@@ -31,6 +31,7 @@ object CheckpointJson {
         // One character per second keeps a long ride's checkpoint small.
         put("pedaled", c.pedaled.joinToString("") { if (it) "1" else "0" })
         put("partialPedaled", c.partialPedaled)
+        put("heartRate", JSONArray(c.heartRate.toList()))
     }.toString()
 
     /** @return null if the text isn't a checkpoint. */
@@ -67,6 +68,7 @@ object CheckpointJson {
             watts = o.optJSONArray("watts")?.let { a -> IntArray(a.length()) { a.getInt(it) } } ?: IntArray(0),
             pedaled = o.optString("pedaled").let { str -> BooleanArray(str.length) { str[it] == '1' } },
             partialPedaled = o.optBoolean("partialPedaled", false),
+            heartRate = o.optJSONArray("heartRate")?.let { a -> IntArray(a.length()) { a.getInt(it) } } ?: IntArray(0),
         )
     } catch (e: Exception) {
         null

@@ -25,6 +25,9 @@ data class RideSnapshot(
     val best20Watts: Float? = null,
     /** Best average watts this ride for each of [PersonalRecords.EffortWindows] reached so far. */
     val bestEfforts: Map<Int, Int> = emptyMap(),
+    /** Average and highest heart rate this ride, once a monitor has sent one. */
+    val avgHeartRate: Int? = null,
+    val maxHeartRate: Int? = null,
 )
 
 /** A finished ride, as kept in history. */
@@ -44,10 +47,27 @@ data class RideSummary(
     val zoneSeconds: List<Int>? = null,
     /** The FTP the zones were worked out with. */
     val ftp: Int? = null,
+    /** Average and highest heart rate, if a heart rate monitor was connected. */
+    val avgHeartRate: Int? = null,
+    val maxHeartRate: Int? = null,
+    /** Seconds in each of the 5 heart rate zones, if the rider had a max heart rate. */
+    val heartRateZoneSeconds: List<Int>? = null,
+    /** The max heart rate the heart rate zones were worked out with. */
+    val maxHr: Int? = null,
 )
 
-/** The bulky part of a ride, kept in its own file: average output for each 5 seconds. */
-data class RideDetail(val startedAt: Long, val powerEvery5s: List<Int>) {
+/**
+ * The bulky part of a ride, kept in its own file: average output for each 5 seconds, and
+ * heart rate for every second (0 where there was no reading), for the graph and for export.
+ */
+data class RideDetail(val startedAt: Long, val powerEvery5s: List<Int>, val heartRate: List<Int> = emptyList()) {
+    /** Average heart rate for each 5 seconds that had a reading, 0 for ones that didn't. */
+    val heartRateEvery5s: List<Int>
+        get() = (0 until heartRate.size / StepSec).map { b ->
+            val beats = heartRate.subList(b * StepSec, (b + 1) * StepSec).filter { it > 0 }
+            if (beats.isEmpty()) 0 else beats.sum() / beats.size
+        }
+
     companion object {
         const val StepSec = 5
     }
@@ -70,6 +90,8 @@ class RideCheckpoint(
     val pedaled: BooleanArray = BooleanArray(0),
     /** Whether you'd pedaled in the second still in progress. */
     val partialPedaled: Boolean = false,
+    /** Heart rate for each whole second, 0 where there was no reading. */
+    val heartRate: IntArray = IntArray(0),
 )
 
 /**
@@ -86,6 +108,7 @@ class RideTracker(
     private val minRideSec: Int = MinRideSec,
     private val wallClock: () -> Long = System::currentTimeMillis,
     private val ftp: () -> Int? = { null },
+    private val maxHr: () -> Int? = { null },
     private val onRideFinished: (RideSummary, RideDetail) -> Unit = { _, _ -> },
 ) {
     var snapshot = RideSnapshot()
@@ -124,6 +147,18 @@ class RideTracker(
     private val pedaled = BoolList()
     private var partialPedaled = false
     private var waitForStop = false
+
+    // Heart rate for each whole second, from whatever the monitor last said.
+    private val heartRates = IntList()
+    private var heartRate: Int? = null
+    private var hrSum = 0L
+    private var hrCount = 0
+    private var hrMax = 0
+
+    /** The latest reading from the rider's heart rate monitor, or null when there isn't one. */
+    fun onHeartRate(bpm: Int?) {
+        heartRate = bpm?.takeIf { it > 0 }
+    }
 
     fun onSample(now: Long, sample: BikeSample) {
         val power = sample.power.coerceAtLeast(0f)
@@ -176,6 +211,9 @@ class RideTracker(
                 watts += (e - ring[(seconds - 1) % ring.size]).toInt()
                 pedaled += partialPedaled || pedaling
                 partialPedaled = false
+                val bpm = heartRate ?: 0
+                heartRates += bpm
+                if (bpm > 0) { hrSum += bpm; hrCount++; hrMax = maxOf(hrMax, bpm) }
                 onSecond(seconds)
             }
             seconds++
@@ -200,8 +238,12 @@ class RideTracker(
             elapsedSec = elapsedAtLastPedal.toInt(),
             best20Watts = best20?.toFloat(),
             bestEfforts = effortsMap,
+            avgHeartRate = avgHr(),
+            maxHeartRate = hrMax.takeIf { it > 0 },
         )
     }
+
+    private fun avgHr(): Int? = if (hrCount > 0) (hrSum / hrCount).toInt() else null
 
     /** Called once for each whole second of the ride, with the ring filled up to [s]. */
     private fun onSecond(s: Int) {
@@ -239,7 +281,7 @@ class RideTracker(
         if (moving >= minRideSec) {
             val (summary, detail) = build(
                 startedAt, elapsedAtLastPedal, moving, powerSum, cadenceSum, resistanceSum, energyJ, distanceMi,
-                efforts, watts.toArray(), pedaled.toArray(), ftp(),
+                efforts, watts.toArray(), pedaled.toArray(), ftp(), heartRates.toArray(), maxHr(),
             )
             onRideFinished(summary, detail)
         }
@@ -260,6 +302,8 @@ class RideTracker(
         watts.clear()
         pedaled.clear()
         partialPedaled = false
+        heartRates.clear()
+        hrSum = 0; hrCount = 0; hrMax = 0
         snapshot = RideSnapshot(riding = true)
     }
 
@@ -282,7 +326,7 @@ class RideTracker(
             bestPower = bestPower, bestCadence = bestCadence, bestResistance = bestResistance,
             seconds = seconds, best20 = best20, ring = ring.copyOf(),
             efforts = efforts.copyOf(), watts = watts.toArray(), pedaled = pedaled.toArray(),
-            partialPedaled = partialPedaled,
+            partialPedaled = partialPedaled, heartRate = heartRates.toArray(),
         )
     }
 
@@ -309,6 +353,9 @@ class RideTracker(
         watts.clear(); watts.addAll(c.watts)
         pedaled.clear(); pedaled.addAll(c.pedaled)
         partialPedaled = c.partialPedaled
+        heartRates.clear(); heartRates.addAll(c.heartRate)
+        val beats = c.heartRate.filter { it > 0 }
+        hrSum = beats.sumOf { it.toLong() }; hrCount = beats.size; hrMax = beats.maxOrNull() ?: 0
         snapshot = RideSnapshot(
             riding = true,
             avgPower = avg(powerSum), avgCadence = avg(cadenceSum), avgResistance = avg(resistanceSum),
@@ -316,7 +363,7 @@ class RideTracker(
             totalKj = (energyJ / 1000).toFloat(), distanceMi = distanceMi.toFloat(),
             calories = (energyJ / JoulesPerKcal / Efficiency).toFloat(),
             elapsedSec = elapsedAtLastPedal.toInt(), best20Watts = best20?.toFloat(),
-            bestEfforts = effortsMap,
+            bestEfforts = effortsMap, avgHeartRate = avgHr(), maxHeartRate = hrMax.takeIf { it > 0 },
         )
         return true
     }
@@ -335,11 +382,11 @@ class RideTracker(
          * The finished ride a checkpoint describes, or null if it's too short to keep.
          * [ftp] is the FTP of the rider it's credited to.
          */
-        fun summaryOf(c: RideCheckpoint, ftp: Int?, minRideSec: Int = MinRideSec): Pair<RideSummary, RideDetail>? {
+        fun summaryOf(c: RideCheckpoint, ftp: Int?, maxHr: Int? = null, minRideSec: Int = MinRideSec): Pair<RideSummary, RideDetail>? {
             if (c.moving < minRideSec) return null
             return build(
                 c.startedAt, c.elapsedAtLastPedal, c.moving, c.powerSum, c.cadenceSum, c.resistanceSum,
-                c.energyJ, c.distanceMi, c.efforts, c.watts, c.pedaled, ftp,
+                c.energyJ, c.distanceMi, c.efforts, c.watts, c.pedaled, ftp, c.heartRate, maxHr,
             )
         }
 
@@ -347,6 +394,7 @@ class RideTracker(
             startedAt: Long, elapsedAtLastPedal: Double, moving: Double,
             powerSum: Double, cadenceSum: Double, resistanceSum: Double, energyJ: Double, distanceMi: Double,
             efforts: DoubleArray, watts: IntArray, pedaled: BooleanArray, ftp: Int?,
+            heartRate: IntArray = IntArray(0), maxHr: Int? = null,
         ): Pair<RideSummary, RideDetail> {
             fun avg(sum: Double) = if (moving > 0) (sum / moving).toInt() else 0
             // Everything after the last pedal stroke is the idle tail, not part of the ride.
@@ -365,6 +413,15 @@ class RideTracker(
                 (b * RideDetail.StepSec until (b + 1) * RideDetail.StepSec).sumOf { watts[it] } / RideDetail.StepSec
             }
             val bests = effortsToMap(efforts)
+            // Heart rate over the same seconds; a ride without a monitor has none.
+            val hr = heartRate.copyOf(minOf(n, heartRate.size))
+            val beats = hr.filter { it > 0 }
+            val hrRider = maxHr?.takeIf { it > 0 }
+            val hrZones = hrRider?.takeIf { beats.isNotEmpty() }?.let { m ->
+                val z = IntArray(HeartRateZones.Count)
+                beats.forEach { z[HeartRateZones.zone(it, m) - 1]++ }
+                z.toList()
+            }
             val summary = RideSummary(
                 startedAt = startedAt,
                 durationSec = elapsedAtLastPedal.toInt(),
@@ -378,8 +435,12 @@ class RideTracker(
                 bestEfforts = bests,
                 zoneSeconds = zones,
                 ftp = zones?.let { rider },
+                avgHeartRate = beats.takeIf { it.isNotEmpty() }?.let { it.sum() / it.size },
+                maxHeartRate = beats.maxOrNull(),
+                heartRateZoneSeconds = hrZones,
+                maxHr = hrZones?.let { hrRider },
             )
-            return summary to RideDetail(startedAt, graph)
+            return summary to RideDetail(startedAt, graph, if (beats.isEmpty()) emptyList() else hr.toList())
         }
 
         private fun effortsToMap(efforts: DoubleArray): Map<Int, Int> =

@@ -17,7 +17,6 @@ Out of scope, on purpose:
   Strava). That's [Grupetto](https://github.com/doudar/grupetto)'s job. Don't add it here.
 - **Depending on Grupetto.** PeloSkin reads the bike itself and must work with Grupetto
   uninstalled. Don't add a Grupetto data source or fallback.
-- Heart rate. Riders pair straps with their class app.
 
 ## Architecture
 
@@ -63,6 +62,26 @@ they'd be ceremony. Keep it that way unless it grows a lot.
 - A rider ends a ride by holding the skin (`tapOrHold` in `SkinUi`) or with *End ride* in
   settings (`SkinService.requestEndRide`). Both call `RideTracker.finish(byRider = true)`,
   which waits for pedaling to stop before a new ride can start.
+
+## Heart rate
+
+- `data/hr/HeartRateLink` talks to Bluetooth LE heart rate monitors: the standard Heart Rate
+  service `0x180D`, Heart Rate Measurement `0x2A37` notifications (enabled through descriptor
+  `0x2902`), parsed by the domain `HeartRateMeasurement` (flags bit 0: 8- or 16-bit value).
+- Each `Profile` has its own `heartRateMonitor` (address and name) and `maxHr`. `SkinService`
+  calls `HeartRateLink.follow()` with the active rider's monitor whenever the rider changes, so
+  switching rider drops one monitor and looks for the other. It finds the monitor with a scan
+  filtered to its address, then connects; without scan permission it falls back to
+  `connectGatt(autoConnect = true)`. It reconnects on its own and clears the reading after 5 s
+  without one.
+- `RideTracker.onHeartRate()` records one value per second alongside watts (0 = no reading).
+  Rides keep average and max heart rate and time in Peloton's 5 heart rate zones
+  (`HeartRateZones`: 65/75/85/95% of max); `RideDetail.heartRate` keeps every second for the
+  graph and for export.
+- Android 11 (the Gen 1 tablet) needs `ACCESS_FINE_LOCATION`, `ACCESS_BACKGROUND_LOCATION` (the
+  skin scans from a background service) and Location turned on to scan. Android 12+ uses
+  `BLUETOOTH_SCAN` and `BLUETOOTH_CONNECT`.
+- On non-Peloton devices the pairing list includes a demo monitor with a made-up heart rate.
 
 ## Bike models
 

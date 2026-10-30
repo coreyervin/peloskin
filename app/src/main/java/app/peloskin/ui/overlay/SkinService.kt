@@ -43,10 +43,12 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import app.peloskin.data.bike.BikeFeed
 import app.peloskin.data.bike.BikeModel
 import app.peloskin.data.bike.FeedStatus
+import app.peloskin.data.hr.HeartRateLink
 import app.peloskin.data.store.FinishedRide
 import app.peloskin.data.store.SettingsStore
 import app.peloskin.domain.BikeSample
 import app.peloskin.domain.CompactEdge
+import app.peloskin.domain.HeartRateZones
 import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.RideSnapshot
 import app.peloskin.domain.RideTracker
@@ -110,6 +112,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
     private val ride = MutableStateFlow(RideSnapshot())
     private val tracker = RideTracker(
         ftp = { SettingsStore.settings.value.active.ftp },
+        maxHr = { SettingsStore.settings.value.active.maxHr },
         onRideFinished = { ride, detail ->
             // Demo rides are made up: they get a summary but stay out of history, FTP and PRs.
             if (rideIsDemo) SettingsStore.showDemoSummary(ride, detail)
@@ -140,7 +143,8 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             if (tracker.resume(saved, SystemClock.elapsedRealtime(), bootId())) {
                 ride.value = tracker.snapshot
             } else {
-                RideTracker.summaryOf(saved, SettingsStore.settings.value.active.ftp)
+                val rider = SettingsStore.settings.value.active
+                RideTracker.summaryOf(saved, rider.ftp, rider.maxHr)
                     ?.let { (ride, detail) -> SettingsStore.recordRide(ride, detail) }
                 SettingsStore.saveCheckpoint(null)
             }
@@ -188,6 +192,16 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                 ride.value = tracker.snapshot.copy(power = ride.value.power, cadence = ride.value.cadence, speedMph = ride.value.speedMph)
                 if (++ticks % 6 == 0) saveCheckpoint(now)
             }
+        }
+        // Whoever is riding, keep their heart rate monitor connected; switching rider drops the
+        // last one and goes looking for the new rider's.
+        HeartRateLink.init(this)
+        lifecycleScope.launch {
+            SettingsStore.settings.map { it.active.heartRateMonitor }.distinctUntilChanged()
+                .collect { HeartRateLink.follow(it) }
+        }
+        lifecycleScope.launch {
+            HeartRateLink.state.collect { tracker.onHeartRate(it.bpm.takeIf { _ -> it.status == HeartRateLink.Status.Connected }) }
         }
         lifecycleScope.launch { endRideRequests.collect { endRide() } }
         lifecycleScope.launch {
@@ -266,6 +280,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         removeWindows()
         hideSummary()
         if (::feed.isInitialized) feed.stop()
+        HeartRateLink.follow(null)
         _running.value = false
         super.onDestroy()
     }
@@ -370,8 +385,15 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
         val settings by SettingsStore.settings.collectAsState()
         val banner by SettingsStore.banner.collectAsState()
         val photos = rememberRiderPhotos()
+        val hr by HeartRateLink.state.collectAsState()
         val active = settings.active
         return SkinState(
+            // Only riders with a monitor get a heart rate on the skin.
+            heartRate = active.heartRateMonitor?.let {
+                val connected = hr.status == HeartRateLink.Status.Connected && hr.monitor == it
+                val bpm = hr.bpm.takeIf { connected }
+                HeartRateReading(bpm, active.maxHr?.let { m -> bpm?.let { b -> HeartRateZones.zone(b, m) } } ?: 0, !connected)
+            },
             ride = r, feed = f, ftp = active.ftp, banner = banner?.text, units = settings.units,
             riderSwitchBanner = banner?.riderSwitch == true,
             // A lone rider without a picture doesn't need a bubble saying who's riding.

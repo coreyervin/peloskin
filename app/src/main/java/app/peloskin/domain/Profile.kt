@@ -13,6 +13,10 @@ data class Profile(
     val records: Records = Records(),
     /** Totals over every ride ever saved, including ones that have dropped out of [rides]. */
     val lifetime: Lifetime = Lifetime.of(rides),
+    /** The rider's own heart rate monitor, connected whenever they're the one riding. */
+    val heartRateMonitor: HeartRateMonitor? = null,
+    /** For heart rate zones. */
+    val maxHr: Int? = null,
 ) {
     /** One or two letters for the rider's bubble: "Corey" → "C", "Jess Smith" → "JS". */
     val initials: String

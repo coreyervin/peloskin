@@ -109,7 +109,61 @@ data class SkinState(
     val rider: RiderBadge? = null,
     /** [banner] is "Riding as …". The full layout skips it, since its rider bubble already shows who. */
     val riderSwitchBanner: Boolean = false,
+    /** The rider's heart rate, if they've paired a monitor. */
+    val heartRate: HeartRateReading? = null,
 )
+
+/** [zone] is 1–5, or 0 without a reading or a max heart rate. [searching] until the monitor connects. */
+data class HeartRateReading(val bpm: Int?, val zone: Int, val searching: Boolean)
+
+/** Heart rate zone colors, cool to hot, like the power zones. */
+val HeartRateZoneColors = listOf(
+    Color(0xFF5B8DB8), Color(0xFF3FD28B), Color(0xFFE6B422), Color(0xFFF08A3C), Color(0xFFFF4A55),
+)
+
+private fun HeartRateReading.color(): Color = if (zone in 1..5) HeartRateZoneColors[zone - 1] else HeartRed
+
+private val HeartRed = Color(0xFFFF4A55)
+
+/** A heart, drawn because the tablet's fonts don't all have one. */
+@Composable
+fun HeartIcon(color: Color, modifier: Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val p = Path().apply {
+            moveTo(w / 2, h * 0.95f)
+            cubicTo(w * 0.05f, h * 0.62f, -w * 0.05f, h * 0.18f, w * 0.27f, h * 0.08f)
+            cubicTo(w * 0.40f, h * 0.04f, w * 0.48f, h * 0.14f, w / 2, h * 0.24f)
+            cubicTo(w * 0.52f, h * 0.14f, w * 0.60f, h * 0.04f, w * 0.73f, h * 0.08f)
+            cubicTo(w * 1.05f, h * 0.18f, w * 0.95f, h * 0.62f, w / 2, h * 0.95f)
+            close()
+        }
+        drawPath(p, color)
+    }
+}
+
+/** Heart rate in the full layout's strip: the heart, beats per minute, and the zone. */
+@Composable
+private fun HeartRateStripItem(hr: HeartRateReading, s: Scale, modifier: Modifier = Modifier) {
+    Row(modifier.padding(horizontal = s.dp(1.4f)), verticalAlignment = Alignment.CenterVertically) {
+        HeartIcon(if (hr.bpm == null) Dim else hr.color(), Modifier.size(s.dp(1.5f)))
+        Spacer(Modifier.width(s.dp(0.6f)))
+        Column(horizontalAlignment = Alignment.Start) {
+            Text(
+                when {
+                    hr.searching -> "SEARCHING"
+                    hr.zone > 0 -> "ZONE ${hr.zone} · BPM"
+                    else -> "HEART RATE · BPM"
+                },
+                color = Dim,
+                style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Medium, fontSize = s.sp(0.72f), letterSpacing = 0.08.em),
+            )
+            Spacer(Modifier.height(s.dp(0.35f)))
+            Text(hr.bpm?.toString() ?: "--", color = Ink, style = TextStyle(fontFamily = Figtree, fontSize = s.sp(1.3f)))
+        }
+    }
+}
 
 /**
  * The rider's bubble, so it's clear at a glance who's riding: their picture, or their
@@ -203,6 +257,8 @@ fun FullSkin(state: SkinState, onToggle: () -> Unit, onNextRider: () -> Unit = {
         }
         // Tapping the chip switches rider; it takes the tap so the layout doesn't switch too.
         state.rider?.let { RiderBubble(it, s, diameter = 2.5f, onClick = onNextRider, modifier = Modifier.padding(start = s.dp(1.4f))) }
+        // Heart rate sits opposite the rider, at the right end of the strip.
+        state.heartRate?.let { HeartRateStripItem(it, s, Modifier.align(Alignment.CenterEnd)) }
         }
     }
 }
@@ -448,6 +504,18 @@ fun CompactSkin(
                     CompactMetric.Distance -> CompactItem("Distance", state.units.distance(r.distanceMi).twoDp(true), state.units.distanceLabel, s)
                     CompactMetric.TotalOutput -> CompactItem("Total", r.totalKj.whole(true), "kJ", s)
                     CompactMetric.Calories -> CompactItem("Calories", r.calories.whole(true), "kcal", s)
+                }
+            }
+            // A rider with a heart rate monitor always gets their heart rate, at the end.
+            state.heartRate?.let { hr ->
+                Box(Modifier.width(1.dp).height(s.dp(1.6f)).background(Color(0x2EFFFFFF)))
+                Row(Modifier.padding(horizontal = s.dp(1.1f)), verticalAlignment = Alignment.CenterVertically) {
+                    HeartIcon(if (hr.bpm == null) Dim else hr.color(), Modifier.size(s.dp(1.05f)))
+                    Spacer(Modifier.width(s.dp(0.45f)))
+                    Text(hr.bpm?.toString() ?: "--", color = Ink,
+                        style = TextStyle(fontFamily = Figtree, fontWeight = FontWeight.Light, fontSize = s.sp(1.7f)))
+                    Spacer(Modifier.width(s.dp(0.3f)))
+                    Text("bpm", color = Dim, style = TextStyle(fontFamily = Figtree, fontSize = s.sp(0.7f)))
                 }
             }
         }

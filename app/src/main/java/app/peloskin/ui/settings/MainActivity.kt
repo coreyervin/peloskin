@@ -84,6 +84,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.peloskin.R
 import app.peloskin.data.bike.BikeModel
 import app.peloskin.data.bike.FeedStatus
+import app.peloskin.data.hr.HeartRateLink
 import app.peloskin.data.store.FinishedRide
 import app.peloskin.data.store.RiderPhotos
 import app.peloskin.data.store.SettingsStore
@@ -91,6 +92,7 @@ import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.Ftp
 import app.peloskin.domain.FtpSource
+import app.peloskin.domain.HeartRateMonitor
 import app.peloskin.domain.NewRecord
 import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.Profile
@@ -99,6 +101,7 @@ import app.peloskin.domain.Settings
 import app.peloskin.domain.SkinMode
 import app.peloskin.domain.Units
 import app.peloskin.ui.overlay.Figtree
+import app.peloskin.ui.overlay.HeartIcon
 import app.peloskin.ui.overlay.RiderAvatar
 import app.peloskin.ui.overlay.RiderBadge
 import app.peloskin.ui.overlay.SkinService
@@ -136,6 +139,15 @@ class MainActivity : ComponentActivity() {
         object Unchanged : PhotoEdit
         object Removed : PhotoEdit
         data class Picked(val photo: Bitmap) : PhotoEdit
+    }
+
+    /** The rider whose heart rate monitor is being paired, or null. */
+    private val pairingFor = MutableStateFlow<String?>(null)
+    /** Bumped after a permission answer, so the pairing dialog re-checks and starts scanning. */
+    private val permissionAnswers = MutableStateFlow(0)
+
+    private val askBluetooth = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        permissionAnswers.value++
     }
 
     /** The rider being edited: an existing rider's id, or [NewRider]. Null when the editor is closed. */
@@ -190,6 +202,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SettingsStore.init(this)
+        HeartRateLink.init(this)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) { refreshPermissions() }
         }
@@ -214,6 +227,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         editingId?.let { id -> RiderEditor(settings, settings.profiles.find { it.id == id }, photos) }
+        val pairingId by pairingFor.collectAsState()
+        pairingId?.let { id -> settings.profiles.find { it.id == id }?.let { PairMonitorDialog(it) } }
 
         Box(Modifier.fillMaxSize().background(Bg), contentAlignment = Alignment.TopCenter) {
             Column(
@@ -359,6 +374,8 @@ class MainActivity : ComponentActivity() {
             }
             if (rider.lifetime.rides > 0) LifetimeRow(rider, settings.units)
             Divider()
+            HeartRateSection(rider, active = rider.id == settings.active.id)
+            Divider()
             Row(Modifier.height(IntrinsicSize.Min)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SubHeading("FTP")
@@ -373,6 +390,151 @@ class MainActivity : ComponentActivity() {
             Divider()
             SubHeading("Recent rides")
             RidesSection(rider, onOpenRide)
+        }
+    }
+
+    // ---------------------------------------------------------- heart rate
+
+    /** The rider's own monitor and max heart rate. Their monitor connects whenever they ride. */
+    @Composable
+    private fun HeartRateSection(rider: Profile, active: Boolean) {
+        val link by HeartRateLink.state.collectAsState()
+        val running by SkinService.running.collectAsState()
+        val monitor = rider.heartRateMonitor
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SubHeading("Heart rate monitor")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val live = monitor != null && active && running && link.monitor == monitor
+                    val connected = live && link.status == HeartRateLink.Status.Connected
+                    HeartIcon(if (connected) Danger else Muted, Modifier.size(22.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(monitor?.name ?: "None paired", color = Ink, style = bodyStyle)
+                        Text(
+                            when {
+                                monitor == null -> "Pair a chest strap or armband to see heart rate on the skin."
+                                !active -> "Connects when ${rider.name} is riding."
+                                !running -> "Connects when the skin is on."
+                                link.status == HeartRateLink.Status.Connected ->
+                                    link.bpm?.let { "Connected · $it bpm" } ?: "Connected · waiting for a reading"
+                                link.status == HeartRateLink.Status.Unavailable -> link.problem ?: "Unavailable"
+                                else -> "Looking for it… put it on so it wakes up."
+                            },
+                            color = Muted, style = smallStyle,
+                        )
+                    }
+                    if (monitor != null) {
+                        TextButton(onClick = { SettingsStore.setHeartRateMonitor(rider.id, null) }) { Text("Forget", color = Muted) }
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    GhostButton(onClick = { pairingFor.value = rider.id }) { Text(if (monitor == null) "Pair" else "Change") }
+                }
+            }
+            Box(Modifier.padding(horizontal = 24.dp).width(1.dp).fillMaxHeight().background(Line))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SubHeading("Max heart rate")
+                var text by remember(rider.id, rider.maxHr) { mutableStateOf(rider.maxHr?.toString() ?: "") }
+                val focus = LocalFocusManager.current
+                val save = {
+                    SettingsStore.setMaxHr(rider.id, text.toIntOrNull())
+                    focus.clearFocus()
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { v -> text = v.filter(Char::isDigit).take(3) },
+                        label = { Text("Max (bpm)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { save() }),
+                        colors = fieldColors(),
+                        modifier = Modifier.width(140.dp),
+                    )
+                    GhostButton(onClick = save) { Text("Save") }
+                }
+                Text(
+                    if (rider.maxHr == null) "Sets the 5 heart rate zones. Don't know it? 220 minus your age is the usual estimate."
+                    else "Zones: 1 under ${pct(rider.maxHr, 65)} · 2 to ${pct(rider.maxHr, 75)} · 3 to ${pct(rider.maxHr, 85)} · " +
+                        "4 to ${pct(rider.maxHr, 95)} · 5 above",
+                    color = Muted, style = smallStyle,
+                )
+            }
+        }
+    }
+
+    private fun pct(max: Int, percent: Int) = max * percent / 100
+
+    /** Nearby heart rate monitors to pick from, like pairing one in the Peloton app. */
+    @Composable
+    private fun PairMonitorDialog(rider: Profile) {
+        val answers by permissionAnswers.collectAsState()
+        val demo = remember { BikeModel.detect(this) == BikeModel.NotPeloton }
+        // Ask for Bluetooth (or, before Android 12, location) permission the first time.
+        LaunchedEffect(Unit) {
+            val missing = HeartRateLink.permissions().filter { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
+            if (missing.isNotEmpty()) askBluetooth.launch(missing.toTypedArray())
+        }
+        val problem = remember(answers) { HeartRateLink.scanProblem() }
+        val found by remember(answers) { HeartRateLink.scan(includeDemo = demo) }.collectAsState(initial = emptyList())
+        val close = { pairingFor.value = null }
+        Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Column(
+                Modifier.width(560.dp).background(Card, RoundedCornerShape(12.dp)).padding(28.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text("Pair ${rider.name}'s heart rate monitor", color = Ink, style = titleStyle)
+                Text("Put your strap on (most only turn on against skin), then tap it below. It connects automatically whenever ${rider.name} rides.",
+                    color = Muted, style = bodyStyle)
+                problem?.let { p ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(p, color = Warn, style = bodyStyle, modifier = Modifier.weight(1f))
+                        if (p.contains("permission")) GhostButton(onClick = { askBluetooth.launch(HeartRateLink.permissions()) }) { Text("Allow") }
+                    }
+                }
+                Column(Modifier.fillMaxWidth().background(Raised, RoundedCornerShape(8.dp)).padding(vertical = 6.dp)) {
+                    if (found.isEmpty()) {
+                        Text(if (problem == null) "Looking for heart rate monitors…" else "Not searching.",
+                            color = Muted, style = bodyStyle, modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp))
+                    }
+                    found.forEach { m ->
+                        val current = rider.heartRateMonitor?.address == m.address
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                SettingsStore.setHeartRateMonitor(rider.id, HeartRateMonitor(m.address, m.name))
+                                close()
+                            }.padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            HeartIcon(Danger, Modifier.size(18.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text(m.name, color = Ink, style = bodyStyle, modifier = Modifier.weight(1f))
+                            if (current) Text("Paired", color = Accent, style = smallStyle, modifier = Modifier.padding(end = 12.dp))
+                            SignalBars(m.rssi)
+                        }
+                    }
+                }
+                Row {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = close) { Text("Cancel", color = Ink) }
+                }
+            }
+        }
+    }
+
+    /** Signal strength as 1–4 bars, so the strap you're wearing is easy to tell apart. */
+    @Composable
+    private fun SignalBars(rssi: Int) {
+        val bars = when {
+            rssi >= -60 -> 4
+            rssi >= -70 -> 3
+            rssi >= -80 -> 2
+            else -> 1
+        }
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            for (i in 1..4) {
+                Box(Modifier.width(4.dp).height((4 + i * 3).dp).background(if (i <= bars) Ink else Line, RoundedCornerShape(1.dp)))
+            }
         }
     }
 

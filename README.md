@@ -46,14 +46,15 @@ what it's built for.
 | **Single-line bar** | Tap the skin to shrink it to one thin line with the numbers you pick, and tap again to bring the full layout back. Drag the bar to the top or bottom edge, and it stays there. |
 | **Power zones** | A 7-zone bar with your % of FTP, using Peloton's zone boundaries. |
 | **Hold to end ride** | Press and hold the skin to end your ride and see its summary straight away. There's also an **End ride** button in settings. |
+| **Heart rate** | Pair any Bluetooth heart rate strap or armband, like in the Peloton app. Beats per minute show in both layouts, colored by heart rate zone. |
 | **mph or km/h** | Speed and distance in miles or kilometres. |
 
 **Your riding, kept by PeloSkin**
 
 |   |   |
 |---|---|
-| **Riders** | Each rider has a name, a profile picture, and their own FTP, ride history and records. Their picture shows in the skin; tap it to switch rider. |
-| **Ride summary** | When a ride ends: total and average output, cadence, distance and calories, an output graph, time in each power zone, best efforts, and how it compares with your last ride of the same length. Tap any past ride to see it again. |
+| **Riders** | Each rider has a name, a profile picture, and their own FTP, heart rate monitor, ride history and records. Their picture shows in the skin; tap it to switch rider, and PeloSkin connects to that rider's own heart rate monitor. |
+| **Ride summary** | When a ride ends: total and average output, cadence, distance and calories, an output graph, time in each power zone, best efforts, and how it compares with your last ride of the same length. With a heart rate monitor, also average and max heart rate, a heart rate graph and time in heart rate zones. Tap any past ride to see it again. |
 | **Personal records** | Best 5-second, 1-minute, 5-minute and 20-minute output, plus best total output for each class length (20, 30, 45 minutes…). A gold banner calls out a new best the moment you set it. |
 | **Automatic FTP** | Your FTP is 95% of your best 20-minute average. PeloSkin tracks it on every ride and raises your FTP when you beat it. Easy rides never lower it, and a lower retest is one tap away. |
 | **Lifetime totals** | Each rider's total rides, time, output, distance and calories, counting every ride ever saved. |
@@ -123,6 +124,12 @@ adb install -r app-release.apk
 # Let it draw over other apps, and write its backup file
 adb shell appops set app.peloskin SYSTEM_ALERT_WINDOW allow
 adb shell appops set app.peloskin MANAGE_EXTERNAL_STORAGE allow   # Android 11+
+
+# Heart rate monitors: Android 11 needs location permission to find Bluetooth devices,
+# including in the background while you ride, and Location turned on
+adb shell pm grant app.peloskin android.permission.ACCESS_FINE_LOCATION
+adb shell pm grant app.peloskin android.permission.ACCESS_BACKGROUND_LOCATION
+adb shell settings put secure location_mode 3
 # adb shell pm grant app.peloskin android.permission.WRITE_EXTERNAL_STORAGE   # Android 10 and older
 
 # Keep Android from putting it to sleep mid-ride
@@ -152,6 +159,20 @@ can run at once, but Grupetto's own overlay will show as well.
   the settings screen doesn't stop the skin.
 - **Reaching your class app's buttons:** the full layout covers the bottom of the screen, where
   apps often put their controls. Tap the skin once to shrink it first.
+
+### Heart rate
+
+- **Pair a monitor:** on the rider's card, under *Heart rate monitor*, tap **Pair**. Put the strap
+  on first (most only turn on against skin), then tap it in the list. Any monitor that uses the
+  standard Bluetooth heart rate service works: Polar, Garmin, Wahoo, Coospo, Apple Watch with a
+  heart rate broadcast app, and others.
+- **Each rider has their own.** When you switch rider, PeloSkin drops the last monitor and looks
+  for the new rider's. While it's looking, the heart shows grey with `--`.
+- **Zones:** enter a max heart rate on the rider's card for the 5 heart rate zones (Peloton's:
+  under 65%, 65–75%, 75–85%, 85–95% and over 95% of max). 220 minus your age is the usual estimate.
+- **Also using it in the Peloton app?** Many straps allow two connections at once (the Polar H10
+  does); others only one.
+- Heart rate is saved second by second with each ride, ready for exporting later.
 
 ### Riders
 
@@ -251,9 +272,10 @@ screen or anything else you like.
 Only the class app knows those. The Peloton app shows its own timer and targets panel, and it
 doesn't clash with PeloSkin.
 
-**What about heart rate?**
-PeloSkin doesn't show it. Pair your heart rate strap with your class app (the Peloton app has a
-Bluetooth heart rate option) and it'll show there.
+**Why does it want location permission?**
+On Android 11 and older (the Gen 1 tablet), Android only lets apps look for Bluetooth devices
+with location permission and Location turned on. PeloSkin uses it to find heart rate monitors and
+never reads your location.
 
 **Will it slow the bike down?**
 It's under 1 MB, uses about 35 MB of memory and barely any CPU.

@@ -40,7 +40,12 @@ object SettingsMerge {
         // Neither copy's totals can simply be added: they share rides. Each total takes the larger
         // copy's, and never less than the combined history adds up to.
         val lifetime = local.lifetime.max(backup.lifetime).max(Lifetime.of(rides))
-        val merged = local.copy(rides = rides, records = records, lifetime = lifetime)
+        // Heart rate settings are kept as set here, unless only the backup has them.
+        val merged = local.copy(
+            rides = rides, records = records, lifetime = lifetime,
+            heartRateMonitor = local.heartRateMonitor ?: backup.heartRateMonitor,
+            maxHr = local.maxHr ?: backup.maxHr,
+        )
         val backupFtpIsNewer = backup.ftp != null && (local.ftp == null || backup.ftpSetAt > local.ftpSetAt)
         return if (backupFtpIsNewer) {
             merged.copy(ftp = backup.ftp, ftpSource = backup.ftpSource, ftpSetAt = backup.ftpSetAt)

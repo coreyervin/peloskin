@@ -4,6 +4,7 @@ import app.peloskin.data.bike.BikeFeed
 import app.peloskin.data.bike.FeedStatus
 import app.peloskin.data.bike.SensorSource
 import app.peloskin.data.store.CheckpointJson
+import app.peloskin.data.store.RideDetailJson
 import app.peloskin.data.store.SettingsJson
 import app.peloskin.data.store.SettingsMerge
 import app.peloskin.domain.BikeMath
@@ -12,6 +13,9 @@ import app.peloskin.domain.CompactEdge
 import app.peloskin.domain.CompactMetric
 import app.peloskin.domain.Ftp
 import app.peloskin.domain.FtpSource
+import app.peloskin.domain.HeartRateMeasurement
+import app.peloskin.domain.HeartRateMonitor
+import app.peloskin.domain.HeartRateZones
 import app.peloskin.domain.Lifetime
 import app.peloskin.domain.NewRecord
 import app.peloskin.domain.PersonalRecords
@@ -642,5 +646,80 @@ class PeloSkinTest {
         val merged = SettingsMerge.merge(local, backup).active.lifetime
         assertEquals(120, merged.rides)
         assertEquals(31_000L, merged.kj)
+    }
+
+    @Test fun heartRatePacketsAreRead() {
+        assertEquals(72, HeartRateMeasurement.bpm(byteArrayOf(0x00, 72)))
+        // 16-bit value: flags bit 0 set, little-endian.
+        assertEquals(180, HeartRateMeasurement.bpm(byteArrayOf(0x01, 180.toByte(), 0x00)))
+        // A byte over 127 is negative in Kotlin; it must still read as 200. Extra fields follow.
+        assertEquals(200, HeartRateMeasurement.bpm(byteArrayOf(0x16, 200.toByte(), 0x10, 0x03)))
+        // Out of range is treated as no reading.
+        assertNull(HeartRateMeasurement.bpm(byteArrayOf(0x01, 0x2C, 0x01)))
+        assertNull(HeartRateMeasurement.bpm(byteArrayOf(0x00, 0)))
+        assertNull(HeartRateMeasurement.bpm(byteArrayOf(0x01, 0x50)))
+        assertNull(HeartRateMeasurement.bpm(byteArrayOf()))
+    }
+
+    @Test fun heartRateZonesFollowPeloton() {
+        assertEquals(1, HeartRateZones.zone(120, 200))  // 60%
+        assertEquals(2, HeartRateZones.zone(130, 200))  // 65%
+        assertEquals(3, HeartRateZones.zone(160, 200))  // 80%
+        assertEquals(4, HeartRateZones.zone(170, 200))  // 85%
+        assertEquals(5, HeartRateZones.zone(195, 200))  // 97.5%
+        assertEquals(0, HeartRateZones.zone(150, 0))
+        assertEquals(185, HeartRateZones.estimateMax(35))
+    }
+
+    @Test fun ridesRecordHeartRate() {
+        var got: Pair<RideSummary, RideDetail>? = null
+        val t = RideTracker(maxHr = { 200 }, onRideFinished = { r, d -> got = r to d })
+        var sec = 0
+        repeat(300) {
+            // No reading for the first minute, then 120 bpm, then 170 bpm.
+            t.onHeartRate(if (sec < 60) null else if (sec < 180) 120 else 170)
+            t.onSample(sec++ * 1000L, BikeSample(150f, 85f, 30f, 17f))
+        }
+        assertEquals(170, t.snapshot.maxHeartRate)
+        t.finish()
+        val (ride, detail) = got!!
+        assertEquals(170, ride.maxHeartRate)
+        assertTrue(ride.avgHeartRate!! in 140..150)
+        // 120 bpm is zone 1 and 170 is zone 4 of 200.
+        val zones = ride.heartRateZoneSeconds!!
+        assertTrue(zones[0] in 118..121 && zones[3] in 118..121)
+        assertEquals(200, ride.maxHr)
+        assertEquals(0, detail.heartRate.first())
+        assertEquals(170, detail.heartRate.last())
+        assertEquals(0, detail.heartRateEvery5s.first())
+    }
+
+    @Test fun ridesWithoutAMonitorHaveNoHeartRate() {
+        var got: Pair<RideSummary, RideDetail>? = null
+        val t = RideTracker(maxHr = { 200 }, onRideFinished = { r, d -> got = r to d })
+        repeat(120) { t.onSample(it * 1000L, BikeSample(150f, 85f, 30f, 17f)) }
+        t.finish()
+        assertNull(got!!.first.avgHeartRate)
+        assertNull(got!!.first.heartRateZoneSeconds)
+        assertTrue(got!!.second.heartRate.isEmpty())
+    }
+
+    @Test fun heartRateSurvivesCheckpointsAndFiles() {
+        val a = RideTracker()
+        repeat(200) { a.onHeartRate(140); a.onSample(it * 1000L, BikeSample(150f, 85f, 30f, 17f)) }
+        val c = CheckpointJson.decode(CheckpointJson.encode(a.checkpoint(200_000L, Boot)!!))!!
+        val b = RideTracker()
+        assertTrue(b.resume(c, 200_500L, Boot))
+        assertEquals(140, b.snapshot.avgHeartRate)
+        val (ride, detail) = RideTracker.summaryOf(c, ftp = null, maxHr = 190)!!
+        assertEquals(140, ride.avgHeartRate)
+        val back = RideDetailJson.decode(RideDetailJson.encode(detail))!!
+        assertEquals(detail.heartRate, back.heartRate)
+        val p = Profile("a", "A", rides = listOf(ride), heartRateMonitor = HeartRateMonitor("AA:BB:CC:DD:EE:FF", "Polar H10"), maxHr = 190)
+        val s = SettingsJson.decode(SettingsJson.encode(Settings(profiles = listOf(p), activeProfileId = "a")))
+        assertEquals(p.heartRateMonitor, s.active.heartRateMonitor)
+        assertEquals(190, s.active.maxHr)
+        assertEquals(ride.heartRateZoneSeconds, s.active.rides.single().heartRateZoneSeconds)
+        assertEquals(140, s.active.rides.single().avgHeartRate)
     }
 }
