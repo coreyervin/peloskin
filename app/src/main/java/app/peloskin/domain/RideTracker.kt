@@ -82,8 +82,8 @@ class RideCheckpoint(
  * the ride will be credited to, read when the ride ends, for time in zones.
  */
 class RideTracker(
-    private val idleEndMs: Long = 5 * 60_000L,
-    private val minRideSec: Int = 5 * 60,
+    private val idleEndMs: Long = IdleEndMs,
+    private val minRideSec: Int = MinRideSec,
     private val wallClock: () -> Long = System::currentTimeMillis,
     private val ftp: () -> Int? = { null },
     private val onRideFinished: (RideSummary, RideDetail) -> Unit = { _, _ -> },
@@ -325,11 +325,17 @@ class RideTracker(
         /** Longest effort window, plus one, in seconds. */
         const val RingSize = 20 * 60 + 1
 
+        /** A ride ends after this long without pedaling. */
+        const val IdleEndMs = 60_000L
+
+        /** Rides with less pedaling than this aren't saved, so bumping the pedals isn't a ride. */
+        const val MinRideSec = 60
+
         /**
          * The finished ride a checkpoint describes, or null if it's too short to keep.
          * [ftp] is the FTP of the rider it's credited to.
          */
-        fun summaryOf(c: RideCheckpoint, ftp: Int?, minRideSec: Int = 5 * 60): Pair<RideSummary, RideDetail>? {
+        fun summaryOf(c: RideCheckpoint, ftp: Int?, minRideSec: Int = MinRideSec): Pair<RideSummary, RideDetail>? {
             if (c.moving < minRideSec) return null
             return build(
                 c.startedAt, c.elapsedAtLastPedal, c.moving, c.powerSum, c.cadenceSum, c.resistanceSum,

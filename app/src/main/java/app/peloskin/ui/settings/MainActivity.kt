@@ -440,7 +440,7 @@ class MainActivity : ComponentActivity() {
     private fun RidesSection(rider: Profile, onOpenRide: (FinishedRide) -> Unit) {
         var allRides by remember(rider.id) { mutableStateOf(false) }
         if (rider.rides.isEmpty()) {
-            Text("Rides with at least 5 minutes of pedaling show up here.", color = Muted, style = bodyStyle)
+            Text("Rides with at least a minute of pedaling show up here.", color = Muted, style = bodyStyle)
             return
         }
         Row(Modifier.padding(horizontal = 12.dp)) {

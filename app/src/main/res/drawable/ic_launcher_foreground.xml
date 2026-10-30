@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The wheel, scaled to the adaptive icon's 66dp safe zone so no mask clips the rim. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.8" android:scaleY="0.8" android:pivotX="54" android:pivotY="54">
+        <path android:pathData="M83.44,71.00A34,34 0 0 1 24.56,71.00" android:strokeColor="#1E1E21" android:strokeWidth="7" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L84.00,54.00" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L79.98,69.00" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L69.00,79.98" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L54.00,84.00" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L39.00,79.98" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L28.02,69.00" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L24.00,54.00" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L28.02,39.00" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L39.00,28.02" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L54.00,24.00" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L69.00,28.02" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L79.98,39.00" android:strokeColor="#2A2A2E" android:strokeWidth="1.2" android:strokeLineCap="butt"/>
+        <path android:pathData="M24.56,71.00A34,34 0 0 1 20.00,54.00" android:strokeColor="#3A3A3E" android:strokeWidth="7" android:strokeLineCap="butt"/>
+        <path android:pathData="M20.13,51.04A34,34 0 0 1 26.15,34.50" android:strokeColor="#56565B" android:strokeWidth="7" android:strokeLineCap="butt"/>
+        <path android:pathData="M27.95,32.15A34,34 0 0 1 42.37,22.05" android:strokeColor="#77777C" android:strokeWidth="7" android:strokeLineCap="butt"/>
+        <path android:pathData="M45.20,21.16A34,34 0 0 1 62.80,21.16" android:strokeColor="#9C9CA1" android:strokeWidth="7" android:strokeLineCap="butt"/>
+        <path android:pathData="M65.63,22.05A34,34 0 0 1 80.05,32.15" android:strokeColor="#C8C8CC" android:strokeWidth="7" android:strokeLineCap="butt"/>
+        <path android:pathData="M81.85,34.50A34,34 0 0 1 87.87,51.04" android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="butt"/>
+        <path android:pathData="M88.00,54.00A34,34 0 0 1 83.44,71.00" android:strokeColor="#E0263C" android:strokeWidth="7" android:strokeLineCap="butt"/>
+        <path android:pathData="M54,54L76.89,46.78" android:strokeColor="#E0263C" android:strokeWidth="5" android:strokeLineCap="round"/>
+        <path android:pathData="M73.89,44.78h6a2,2 0 0 1 0,4h-6a2,2 0 0 1 0,-4z" android:fillColor="#E0263C"/>
+        <path android:pathData="M47.5,54a6.5,6.5 0 1 1 13.0,0a6.5,6.5 0 1 1 -13.0,0z" android:fillColor="#FFFFFF"/>
+        <path android:pathData="M51.5,54a2.5,2.5 0 1 1 5.0,0a2.5,2.5 0 1 1 -5.0,0z" android:fillColor="#000000"/>
+    </group>
+</vector>

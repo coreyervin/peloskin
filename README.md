@@ -104,8 +104,8 @@ Peloton's older sensor app if the service doesn't answer.
 | Power zone | Current output ÷ FTP, using Peloton's 7 zones (55 / 75 / 90 / 105 / 120 / 150%) |
 | FTP | 95% of your best rolling 20-minute average |
 
-A ride starts when you start pedaling and ends after 5 minutes without pedaling, when you hold
-the skin to end it, or when you tap **End ride** or **Stop** in settings. Idle minutes aren't counted, and rides with less than 5 minutes of pedaling
+A ride starts when you start pedaling and ends after 1 minute without pedaling, when you hold
+the skin to end it, or when you tap **End ride** or **Stop** in settings. Idle time isn't counted, and rides with less than 1 minute of pedaling
 aren't saved. If the bike is switched off mid-ride, the ride is saved the next time PeloSkin
 starts.
 
@@ -141,7 +141,7 @@ can run at once, but Grupetto's own overlay will show as well.
 - **Switch layouts:** tap anywhere on the skin. The full layout becomes the single-line bar,
   and tapping the bar brings the full layout back.
 - **Move the single-line bar:** drag it to the top or bottom edge.
-- **Open settings:** tap the **PeloSkin** icon in your app drawer (a dark tile with teal bars).
+- **Open settings:** tap the **PeloSkin** icon in your app drawer (a black wheel with a red crank arm).
   Long-press it to put it on the home screen.
 - **End a ride:** press and hold the skin (either layout). A gold *Hold to end ride* bar fills
   over about 1.5 seconds; let go early to cancel. The ride is saved and its summary comes up right

@@ -247,7 +247,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
     /** Ends the ride now: it's saved and its summary comes up, and the skin keeps running. */
     private fun endRide() {
         if (!tracker.snapshot.riding) return
-        if (!tracker.longEnough) SettingsStore.showBanner("Ride ended · under 5 minutes of pedaling, so it isn't saved")
+        if (!tracker.longEnough) SettingsStore.showBanner("Ride ended · under a minute of pedaling, so it isn't saved")
         tracker.finish(byRider = true)
         ride.value = tracker.snapshot.copy(power = ride.value.power, cadence = ride.value.cadence, speedMph = ride.value.speedMph)
         SettingsStore.saveCheckpoint(null)

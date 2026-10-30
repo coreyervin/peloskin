@@ -125,9 +125,9 @@ class PeloSkinTest {
         val finished = mutableListOf<RideSummary>()
         val t = RideTracker(onRideFinished = { ride, _ -> finished += ride })
         for (i in 0..600) t.onSample(i * 1000L, BikeSample(150f, 85f, 35f, 18f))
-        t.tick(600_000L + 4 * 60_000L)
+        t.tick(600_000L + 50_000L)
         assertTrue(t.snapshot.riding)
-        t.tick(600_000L + 5 * 60_000L)
+        t.tick(600_000L + 60_000L)
         assertEquals(false, t.snapshot.riding)
         assertEquals(600, finished.single().durationSec)
     }
@@ -271,7 +271,7 @@ class PeloSkinTest {
     @Test fun stoppingAShortSpinSavesNothing() {
         val finished = mutableListOf<RideSummary>()
         val t = RideTracker(onRideFinished = { ride, _ -> finished += ride })
-        repeat(120) { t.onSample(it * 1000L, BikeSample(180f, 88f, 40f, 19f)) }
+        repeat(40) { t.onSample(it * 1000L, BikeSample(180f, 88f, 40f, 19f)) }
         t.finish()
         assertTrue(finished.isEmpty())
     }
@@ -285,8 +285,8 @@ class PeloSkinTest {
         assertEquals(200, summary.avgPower)
         assertEquals(200, summary.best20Watts)
         val short = RideTracker()
-        repeat(60) { short.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
-        assertNull(RideTracker.summaryOf(short.checkpoint(60_000L, Boot)!!, ftp = null))
+        repeat(30) { short.onSample(it * 1000L, BikeSample(200f, 90f, 40f, 20f)) }
+        assertNull(RideTracker.summaryOf(short.checkpoint(30_000L, Boot)!!, ftp = null))
     }
 
     @Test fun resistanceSpikesAreFiltered() {
@@ -606,11 +606,11 @@ class PeloSkinTest {
         assertTrue(t.snapshot.riding)
     }
 
-    @Test fun onlyRidesWithFiveMinutesOfPedalingAreLongEnough() {
+    @Test fun onlyRidesWithAMinuteOfPedalingAreLongEnough() {
         val t = RideTracker()
-        repeat(200) { t.onSample(it * 1000L, BikeSample(150f, 85f, 30f, 17f)) }
+        repeat(40) { t.onSample(it * 1000L, BikeSample(150f, 85f, 30f, 17f)) }
         assertEquals(false, t.longEnough)
-        repeat(200) { t.onSample((200 + it) * 1000L, BikeSample(150f, 85f, 30f, 17f)) }
+        repeat(40) { t.onSample((40 + it) * 1000L, BikeSample(150f, 85f, 30f, 17f)) }
         assertTrue(t.longEnough)
     }
 }
