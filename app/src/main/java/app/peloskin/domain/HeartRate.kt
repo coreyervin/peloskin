@@ -19,6 +19,9 @@ object HeartRateZones {
         return if (i < 0) Count else i + 1
     }
 
+    /** Beats per minute where each of the 5 zones starts, from 0. */
+    fun lowerBounds(maxHr: Int): List<Int> = listOf(0) + upperBounds.map { (it * maxHr).roundToInt() }
+
     fun percentOfMax(bpm: Int, maxHr: Int): Int = if (maxHr <= 0) 0 else (bpm * 100f / maxHr).roundToInt()
 
     /** The usual estimate when a rider doesn't know theirs. */

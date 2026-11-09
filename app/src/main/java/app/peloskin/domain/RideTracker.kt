@@ -28,6 +28,8 @@ data class RideSnapshot(
     /** Average and highest heart rate this ride, once a monitor has sent one. */
     val avgHeartRate: Int? = null,
     val maxHeartRate: Int? = null,
+    /** Seconds so far in each of the 5 heart rate zones, if the rider has a max heart rate. */
+    val heartRateZoneSeconds: List<Int>? = null,
 )
 
 /** A finished ride, as kept in history. */
@@ -154,6 +156,7 @@ class RideTracker(
     private var hrSum = 0L
     private var hrCount = 0
     private var hrMax = 0
+    private val hrZoneSec = IntArray(HeartRateZones.Count)
 
     /** The latest reading from the rider's heart rate monitor, or null when there isn't one. */
     fun onHeartRate(bpm: Int?) {
@@ -213,7 +216,7 @@ class RideTracker(
                 partialPedaled = false
                 val bpm = heartRate ?: 0
                 heartRates += bpm
-                if (bpm > 0) { hrSum += bpm; hrCount++; hrMax = maxOf(hrMax, bpm) }
+                if (bpm > 0) { hrSum += bpm; hrCount++; hrMax = maxOf(hrMax, bpm); countHrZone(bpm) }
                 onSecond(seconds)
             }
             seconds++
@@ -240,10 +243,19 @@ class RideTracker(
             bestEfforts = effortsMap,
             avgHeartRate = avgHr(),
             maxHeartRate = hrMax.takeIf { it > 0 },
+            heartRateZoneSeconds = hrZones(),
         )
     }
 
     private fun avgHr(): Int? = if (hrCount > 0) (hrSum / hrCount).toInt() else null
+
+    private fun countHrZone(bpm: Int) {
+        val max = maxHr() ?: return
+        val z = HeartRateZones.zone(bpm, max)
+        if (z > 0) hrZoneSec[z - 1]++
+    }
+
+    private fun hrZones(): List<Int>? = hrZoneSec.toList().takeIf { maxHr() != null && hrCount > 0 }
 
     /** Called once for each whole second of the ride, with the ring filled up to [s]. */
     private fun onSecond(s: Int) {
@@ -304,6 +316,7 @@ class RideTracker(
         partialPedaled = false
         heartRates.clear()
         hrSum = 0; hrCount = 0; hrMax = 0
+        hrZoneSec.fill(0)
         snapshot = RideSnapshot(riding = true)
     }
 
@@ -356,6 +369,8 @@ class RideTracker(
         heartRates.clear(); heartRates.addAll(c.heartRate)
         val beats = c.heartRate.filter { it > 0 }
         hrSum = beats.sumOf { it.toLong() }; hrCount = beats.size; hrMax = beats.maxOrNull() ?: 0
+        hrZoneSec.fill(0)
+        beats.forEach(::countHrZone)
         snapshot = RideSnapshot(
             riding = true,
             avgPower = avg(powerSum), avgCadence = avg(cadenceSum), avgResistance = avg(resistanceSum),
@@ -364,6 +379,7 @@ class RideTracker(
             calories = (energyJ / JoulesPerKcal / Efficiency).toFloat(),
             elapsedSec = elapsedAtLastPedal.toInt(), best20Watts = best20?.toFloat(),
             bestEfforts = effortsMap, avgHeartRate = avgHr(), maxHeartRate = hrMax.takeIf { it > 0 },
+            heartRateZoneSeconds = hrZones(),
         )
         return true
     }

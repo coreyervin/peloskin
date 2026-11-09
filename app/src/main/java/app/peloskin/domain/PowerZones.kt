@@ -16,6 +16,9 @@ object PowerZones {
     }
 
     fun percentOfFtp(power: Float, ftp: Int): Int = if (ftp <= 0) 0 else (power / ftp * 100).roundToInt()
+
+    /** Watts where each of the 7 zones starts, from 0, like the ticks under Peloton's zone bar. */
+    fun lowerBounds(ftp: Int): List<Int> = listOf(0) + upperBounds.map { (it * ftp).roundToInt() }
 }
 
 enum class FtpSource { Manual, Ride }

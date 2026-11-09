@@ -15,24 +15,16 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -48,13 +40,14 @@ import app.peloskin.data.store.FinishedRide
 import app.peloskin.data.store.SettingsStore
 import app.peloskin.domain.BikeSample
 import app.peloskin.domain.CompactEdge
-import app.peloskin.domain.HeartRateZones
 import app.peloskin.domain.PersonalRecords
 import app.peloskin.domain.RideSnapshot
 import app.peloskin.domain.RideTracker
 import app.peloskin.domain.SkinMode
 import app.peloskin.ui.settings.MainActivity
-import app.peloskin.ui.summary.RideSummaryCard
+import app.peloskin.ui.summary.WorkoutCompleteBar
+import app.peloskin.ui.summary.WorkoutDetailsSheet
+import app.peloskin.ui.summary.WorkoutSummaryPanel
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -233,7 +226,8 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                 for ((seconds, watts) in r.bestEfforts) {
                     val best = records[seconds] ?: continue
                     if (watts > best.value && announced.add(seconds)) {
-                        SettingsStore.showBanner("New ${PersonalRecords.effortLabel(seconds)} PR · $watts W")
+                        val effort = PersonalRecords.effortLabel(seconds)
+                        SettingsStore.showBanner("New $effort PR · $watts W", record = SettingsStore.RecordCard(effort, watts, best.value))
                     }
                 }
             }
@@ -305,7 +299,7 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             SkinMode.Compact -> showCompact()
         }
         // Keep an open summary on top of the skin.
-        SettingsStore.lastFinished.value?.let { if (summaryView != null) showSummary(it) }
+        SettingsStore.lastFinished.value?.let { if (summaryViews.isNotEmpty()) showSummary(it) }
     }
 
     private fun showFull() {
@@ -320,7 +314,30 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
                 onNextRider = SettingsStore::nextProfile, onEndRide = ::endRide,
             )
         }, display)
+        val margin = (1.3f * unit).roundToInt()
+        // Heart rate on the left edge, a little above the middle, like Peloton's. It's only
+        // there for riders with a monitor, and taps go through it to the class app.
+        add(composeView {
+            skinState().heartRate?.let { HeartRatePanel(it, rememberScale()) }
+        }, passThroughParams().apply {
+            width = (16.5f * unit).roundToInt()
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            x = margin
+            y = -(resources.displayMetrics.heightPixels * 0.08f).roundToInt()
+        })
+        // A personal record beaten mid-ride, in the top-right corner while its banner lasts.
+        add(composeView {
+            skinState().record?.let { RecordCardView(it, rememberScale()) }
+        }, passThroughParams().apply {
+            width = (19f * unit).roundToInt()
+            gravity = Gravity.TOP or Gravity.END
+            x = margin
+            y = margin
+        })
     }
+
+    /** A window that shows but never takes a touch. */
+    private fun passThroughParams() = baseParams().apply { flags = flags or LayoutParams.FLAG_NOT_TOUCHABLE }
 
     private fun showCompact() {
         val edge = SettingsStore.settings.value.compactEdge
@@ -391,11 +408,11 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
             // Only riders with a monitor get a heart rate on the skin.
             heartRate = active.heartRateMonitor?.let {
                 val connected = hr.status == HeartRateLink.Status.Connected && hr.monitor == it
-                val bpm = hr.bpm.takeIf { connected }
-                HeartRateReading(bpm, active.maxHr?.let { m -> bpm?.let { b -> HeartRateZones.zone(b, m) } } ?: 0, !connected)
+                HeartRateReading.of(hr.bpm.takeIf { connected }, active.maxHr, !connected, r.heartRateZoneSeconds)
             },
             ride = r, feed = f, ftp = active.ftp, banner = banner?.text, units = settings.units,
             riderSwitchBanner = banner?.riderSwitch == true,
+            record = banner?.record,
             // A lone rider without a picture doesn't need a bubble saying who's riding.
             rider = settings.badgeFor(active, photos).takeIf { settings.profiles.size > 1 || it?.photo != null },
         )
@@ -420,43 +437,85 @@ class SkinService : LifecycleService(), SavedStateRegistryOwner {
 
     // ------------------------------------------------------------ ride summary
 
-    private var summaryView: View? = null
+    private val summaryViews = mutableListOf<View>()
     private var summaryTimeout: Job? = null
+    private var detailsOpen = false
+    private var panelOpen = true
+    private var summaryShown: FinishedRide? = null
 
-    /** The after-ride card, over the whole screen. Tap anywhere to close it. */
+    /**
+     * After a ride, like Peloton's: a top bar with "Workout complete", Workout details and
+     * Done, and the workout summary panel in the top-right corner, with the skin still showing
+     * underneath. Workout details swaps the panel for the details sheet.
+     */
     private fun showSummary(finished: FinishedRide) {
-        hideSummary()
-        val params = baseParams().apply {
-            width = LayoutParams.MATCH_PARENT
-            height = LayoutParams.MATCH_PARENT
-        }
-        val view = composeView {
-            val settings by SettingsStore.settings.collectAsState()
-            val photos = rememberRiderPhotos()
-            Box(
-                Modifier.fillMaxSize().background(Color(0xCC000000))
-                    .clickable(remember { MutableInteractionSource() }, null) { SettingsStore.dismissSummary() },
-                contentAlignment = Alignment.Center,
-            ) {
-                // Scrolls if it doesn't fit, say with a long rider name.
-                RideSummaryCard(
-                    finished, settings.units, Modifier.padding(vertical = 24.dp).verticalScroll(rememberScrollState()),
-                    footer = "Tap anywhere to close",
+        // A new ride's summary starts on the panel; redrawing the same one keeps where you were.
+        val fresh = summaryShown !== finished || summaryViews.isEmpty()
+        removeSummaryViews()
+        if (fresh) { summaryTimeout?.cancel(); detailsOpen = false; panelOpen = true; summaryShown = finished }
+        val margin = (1.3f * unit).roundToInt()
+        val barHeight = (5.2f * unit).roundToInt()
+        addSummary(composeView {
+            WorkoutCompleteBar(
+                detailsOpen,
+                onDetails = { detailsOpen = !detailsOpen; panelOpen = true; showSummary(finished) },
+                onDone = SettingsStore::dismissSummary,
+                s = rememberScale(),
+            )
+        }, baseParams().apply { width = LayoutParams.MATCH_PARENT; gravity = Gravity.TOP })
+        if (detailsOpen) {
+            addSummary(composeView {
+                val settings by SettingsStore.settings.collectAsState()
+                val photos = rememberRiderPhotos()
+                val s = rememberScale()
+                WorkoutDetailsSheet(
+                    finished, settings.units, s, Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     rider = settings.badgeFor(settings.profiles.find { it.id == finished.profileId }, photos),
                 )
-            }
+            }, baseParams().apply {
+                width = resources.displayMetrics.widthPixels - 2 * margin
+                gravity = Gravity.TOP or Gravity.START
+                x = margin
+                y = barHeight + margin
+            })
+        } else if (panelOpen) {
+            addSummary(composeView {
+                val settings by SettingsStore.settings.collectAsState()
+                val photos = rememberRiderPhotos()
+                WorkoutSummaryPanel(
+                    finished, settings.units,
+                    rider = settings.badgeFor(settings.profiles.find { it.id == finished.profileId }, photos),
+                    onBack = { panelOpen = false; showSummary(finished) },
+                    s = rememberScale(),
+                )
+            }, baseParams().apply {
+                width = (24f * unit).roundToInt()
+                gravity = Gravity.TOP or Gravity.END
+                x = margin
+                y = barHeight + margin
+            })
         }
+        if (fresh) {
+            // Nobody's watching after a few minutes; don't leave it over the next class.
+            summaryTimeout = lifecycleScope.launch { delay(5 * 60_000L); SettingsStore.dismissSummary() }
+        }
+    }
+
+    private fun addSummary(view: View, params: LayoutParams) {
         windows.addView(view, params)
-        summaryView = view
-        // Nobody's watching after a few minutes; don't leave it over the next class.
-        summaryTimeout = lifecycleScope.launch { delay(5 * 60_000L); SettingsStore.dismissSummary() }
+        summaryViews += view
+    }
+
+    private fun removeSummaryViews() {
+        summaryViews.forEach { runCatching { windows.removeView(it) } }
+        summaryViews.clear()
     }
 
     private fun hideSummary() {
         summaryTimeout?.cancel()
         summaryTimeout = null
-        summaryView?.let { runCatching { windows.removeView(it) } }
-        summaryView = null
+        summaryShown = null
+        removeSummaryViews()
     }
 
     // ----------------------------------------------------------- notification

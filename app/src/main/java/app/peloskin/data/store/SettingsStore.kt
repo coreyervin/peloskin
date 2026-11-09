@@ -48,14 +48,20 @@ object SettingsStore {
 
     /**
      * A short message for the skin: a new FTP, a new PR, or who's riding now. [riderSwitch]
-     * marks "Riding as …", which the full layout leaves to its rider bubble.
+     * marks "Riding as …", which the full layout leaves to its rider bubble. A personal record
+     * beaten mid-ride also has its [record], which the full layout shows as a card.
      */
-    data class Banner(val text: String, val riderSwitch: Boolean = false)
+    data class Banner(val text: String, val riderSwitch: Boolean = false, val record: RecordCard? = null)
+
+    /** A best effort just beaten: "5 min", the new watts, and the old record. */
+    data class RecordCard(val effort: String, val watts: Int, val previous: Int?)
 
     private val _banner = MutableStateFlow<Banner?>(null)
     val banner: StateFlow<Banner?> = _banner
 
-    fun showBanner(text: String, riderSwitch: Boolean = false) { _banner.value = Banner(text, riderSwitch) }
+    fun showBanner(text: String, riderSwitch: Boolean = false, record: RecordCard? = null) {
+        _banner.value = Banner(text, riderSwitch, record)
+    }
     fun clearBanner() { _banner.value = null }
 
     /** The ride that just ended, for the summary card. Cleared once it's been seen. */

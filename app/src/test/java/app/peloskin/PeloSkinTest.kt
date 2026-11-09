@@ -189,6 +189,8 @@ class PeloSkinTest {
         assertEquals(76, PowerZones.percentOfFtp(232f, 305))
         assertEquals(0, PowerZones.zone(200f, 0))
         assertEquals(0, PowerZones.percentOfFtp(0f, 0))
+        // The ticks under the zone bar: where each zone starts.
+        assertEquals(listOf(0, 110, 150, 180, 210, 240, 300), PowerZones.lowerBounds(200))
     }
 
     @Test fun ftpOnlyRises() {
@@ -669,6 +671,7 @@ class PeloSkinTest {
         assertEquals(5, HeartRateZones.zone(195, 200))  // 97.5%
         assertEquals(0, HeartRateZones.zone(150, 0))
         assertEquals(185, HeartRateZones.estimateMax(35))
+        assertEquals(listOf(0, 130, 150, 170, 190), HeartRateZones.lowerBounds(200))
     }
 
     @Test fun ridesRecordHeartRate() {
@@ -681,6 +684,9 @@ class PeloSkinTest {
             t.onSample(sec++ * 1000L, BikeSample(150f, 85f, 30f, 17f))
         }
         assertEquals(170, t.snapshot.maxHeartRate)
+        // The heart rate panel shows time in each zone while you ride.
+        val live = t.snapshot.heartRateZoneSeconds!!
+        assertTrue(live[0] in 118..121 && live[3] in 118..121)
         t.finish()
         val (ride, detail) = got!!
         assertEquals(170, ride.maxHeartRate)

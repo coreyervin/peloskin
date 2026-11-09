@@ -1,3 +1,4 @@
+Figtree (app/src/main/res/font/figtree_*.ttf):
 Copyright 2022 The Figtree Project Authors (https://github.com/erikdkennedy/figtree)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
@@ -91,3 +92,10 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+----------------------------------------------------------------------
+
+Copyright 2022 The Inter Project Authors (https://github.com/rsms/inter-tight)
+(Inter Tight, bundled as app/src/main/res/font/intertight_*.ttf; subset to Latin)
+
+Licensed under the same SIL Open Font License, Version 1.1, above.

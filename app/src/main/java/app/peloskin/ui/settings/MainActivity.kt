@@ -108,7 +108,8 @@ import app.peloskin.ui.overlay.SkinService
 import app.peloskin.ui.overlay.badgeFor
 import app.peloskin.ui.overlay.rememberRiderPhotos
 import app.peloskin.ui.overlay.riderColor
-import app.peloskin.ui.summary.RideSummaryCard
+import app.peloskin.ui.overlay.rememberScale
+import app.peloskin.ui.summary.WorkoutDetailsSheet
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -894,8 +895,16 @@ class MainActivity : ComponentActivity() {
                 Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null, onClick = onClose),
                 contentAlignment = Alignment.Center,
             ) {
-                RideSummaryCard(f.copy(detail = detail), units, Modifier.verticalScroll(rememberScrollState()),
-                    footer = "Tap anywhere to close", rider = rider)
+                val s = rememberScale()
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    WorkoutDetailsSheet(
+                        f.copy(detail = detail), units, s,
+                        Modifier.padding(horizontal = 24.dp).widthIn(max = 1100.dp).weight(1f, fill = false)
+                            .clickable(remember { MutableInteractionSource() }, null) {}.verticalScroll(rememberScrollState()),
+                        rider = rider, header = true,
+                    )
+                    Text("Tap outside to close", color = Muted, style = smallStyle, modifier = Modifier.padding(top = 10.dp))
+                }
             }
         }
     }

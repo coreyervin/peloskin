@@ -42,7 +42,7 @@ they'd be ceremony. Keep it that way unless it grows a lot.
   switch to them, so a ride in progress keeps its rider.
   That also updates records (`PersonalRecords.apply`), may raise FTP, saves the ride's output
   graph (`RideDetail`, one JSON file per ride under `rides/<profileId>/`), and sets
-  `lastFinished` for the summary card.
+  `lastFinished` for the post-ride screen.
 - Records: best average watts over 5 s, 1, 5 and 20 min, and best total kJ per class length
   (a ride within 15% of 5/10/15/20/30/45/60/75/90/120 min). Only records that beat an earlier
   one are announced; a rider's first ride doesn't fill the screen with "PR"s.
@@ -54,7 +54,7 @@ they'd be ceremony. Keep it that way unless it grows a lot.
 - Demo rides show a summary but are never recorded.
 - Rider pictures are files, not settings: `RiderPhotos` keeps a 320 px square JPEG per rider id in
   `files/photos/` and `Documents/PeloSkin/photos/`, syncs the two once the backup is readable,
-  and prunes pictures of removed riders. The skin, settings and summary card draw them with
+  and prunes pictures of removed riders. The skin, settings and post-ride screen draw them with
   `RiderAvatar`, which falls back to initials on the rider's color.
 - The settings screen is ordered by how often things are used: skin on/off, *Who's riding*, the
   selected rider's card (FTP, records, rides), then skin settings. Rider-scoped controls belong
@@ -62,6 +62,23 @@ they'd be ceremony. Keep it that way unless it grows a lot.
 - A rider ends a ride by holding the skin (`tapOrHold` in `SkinUi`) or with *End ride* in
   settings (`SkinService.requestEndRide`). Both call `RideTracker.finish(byRider = true)`,
   which waits for pedaling to stop before a new ride can start.
+
+## Look
+
+The skin and post-ride screens follow the screen on Peloton's own bikes (since its late-2023
+font change), sized in `Scale` units of 1% of the screen width:
+
+- Full layout (`FullSkin`, one window at the bottom): rider bubble, slate Speed and Distance
+  tiles, the big three with AVG/BEST and Peloton's power zone box above Output, Total output and
+  Calories tiles, the round fold button.
+- `HeartRatePanel` and `RecordCardView` are separate untouchable windows (left edge a little
+  above the middle; top-right), so taps reach the class app around them.
+- After a ride: `WorkoutCompleteBar` across the top, `WorkoutSummaryPanel` top-right, and
+  `WorkoutDetailsSheet` (light, like Peloton's details page) in place of the panel. The settings
+  screen reuses the sheet, with a header, for past rides.
+- Colors: heart rate zones use Peloton's Strive Score colors, power zones Peloton's 2023 palette
+  (`HeartRateZoneColors`, `PowerZoneColors`). Labels are bold caps with the unit in lowercase
+  brackets. Don't use Peloton's logo or font.
 
 ## Heart rate
 
@@ -149,7 +166,7 @@ export JAVA_HOME=/path/to/jdk17
   `adb shell appops set app.peloskin MANAGE_EXTERNAL_STORAGE allow`.
 - The Peloton tablet's system fonts are missing some symbols (▲ ▼ ⌃ ⌄ showed as boxes).
   Draw icons with `Canvas` instead of typing them, and check any new non-ASCII character
-  against the bundled Figtree font.
+  against the bundled fonts (Inter Tight for the skin and post-ride screens, Figtree for settings).
 
 ## Releases
 
