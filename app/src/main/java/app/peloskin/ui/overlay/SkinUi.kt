@@ -85,6 +85,7 @@ val Figtree = FontFamily(
 
 /** The skin's font: narrow, like the one Peloton's bike screen has used since late 2023. */
 val InterTight = FontFamily(
+    Font(R.font.intertight_extralight, FontWeight.ExtraLight),
     Font(R.font.intertight_light, FontWeight.Light),
     Font(R.font.intertight_regular, FontWeight.Normal),
     Font(R.font.intertight_medium, FontWeight.Medium),
@@ -96,7 +97,7 @@ val InterTight = FontFamily(
 internal val Ink = Color.White
 internal val Dim = Color(0xFFD3D8E2)
 internal val Faint = Color(0xFF97A0B3)
-internal val Tile = Color(0xCC4A5670)
+internal val Tile = Color(0x804A5670)
 internal val Panel = Color(0xE61E2638)
 internal val Band = Color(0x12FFFFFF)
 internal val Up = Color(0xFF3FD28B)
@@ -238,10 +239,10 @@ internal fun Label(text: String, s: Scale, size: Float = 0.86f, color: Color = I
     color = color,
     modifier = modifier,
     maxLines = 1,
-    style = TextStyle(fontFamily = InterTight, fontWeight = FontWeight.Bold, fontSize = s.sp(size), letterSpacing = 0.05.em),
+    style = TextStyle(fontFamily = InterTight, fontWeight = FontWeight.SemiBold, fontSize = s.sp(size), letterSpacing = 0.05.em),
 )
 
-internal fun numberStyle(s: Scale, size: Float, weight: FontWeight = FontWeight.Normal) =
+internal fun numberStyle(s: Scale, size: Float, weight: FontWeight = FontWeight.Light) =
     TextStyle(fontFamily = InterTight, fontWeight = weight, fontSize = s.sp(size), letterSpacing = (-0.01).em)
 
 // ---------------------------------------------------------------- full skin
@@ -310,7 +311,7 @@ private fun MetricTile(name: String, value: String, unit: String, s: Scale) {
                 append(value)
                 withStyle(SpanStyle(fontSize = s.sp(0.8f), letterSpacing = 0.em)) { append(" $unit") }
             },
-            color = Ink, maxLines = 1, style = numberStyle(s, 1.55f, FontWeight.SemiBold),
+            color = Ink, maxLines = 1, style = numberStyle(s, 1.55f, FontWeight.Normal),
         )
     }
 }
@@ -329,7 +330,7 @@ private fun BigMetric(
                 trend = if (showTrend && avg > 0f) current >= avg else null, s = s)
             Text(
                 value, color = Ink, modifier = Modifier.widthIn(min = s.dp(8.2f)).padding(horizontal = s.dp(0.5f)),
-                style = numberStyle(s, 4.9f, FontWeight.Light).copy(textAlign = TextAlign.Center, letterSpacing = (-0.02).em),
+                style = numberStyle(s, 4.9f, FontWeight.ExtraLight).copy(textAlign = TextAlign.Center, letterSpacing = (-0.02).em),
             )
             SideStat("Best", if (showStats) best.roundToInt().toString() else "--", trend = null, s = s)
         }
@@ -509,7 +510,7 @@ fun HeartRatePanel(hr: HeartRateReading, s: Scale) {
         Row(Modifier.fillMaxWidth().padding(horizontal = s.dp(1f)), verticalAlignment = Alignment.CenterVertically) {
             PanelStat("Zone", if (hr.zone > 0) hr.zone.toString() else "-", s, Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(hr.bpm?.toString() ?: "--", color = Ink, style = numberStyle(s, 4.1f, FontWeight.Light).copy(letterSpacing = (-0.02).em))
+                Text(hr.bpm?.toString() ?: "--", color = Ink, style = numberStyle(s, 4.1f, FontWeight.ExtraLight).copy(letterSpacing = (-0.02).em))
                 Text("bpm", color = Dim, style = numberStyle(s, 0.85f))
             }
             PanelStat("Max", hr.percentOfMax?.let { "$it%" } ?: "--", s, Modifier.weight(1f))
@@ -702,9 +703,9 @@ private fun CompactItem(name: String, value: String, unit: String, s: Scale, ext
     Row(Modifier.padding(horizontal = s.dp(1.05f)), verticalAlignment = Alignment.CenterVertically) {
         Label(name, s, size = 0.68f)
         Spacer(Modifier.width(s.dp(0.4f)))
-        Text(value, color = Ink, style = numberStyle(s, 1.95f, FontWeight.Light))
+        Text(value, color = Ink, style = numberStyle(s, 1.95f, FontWeight.ExtraLight))
         Spacer(Modifier.width(s.dp(0.3f)))
-        Text(unit, color = Ink, style = numberStyle(s, 0.75f, FontWeight.SemiBold))
+        Text(unit, color = Ink, style = numberStyle(s, 0.75f, FontWeight.Medium))
         extra()
     }
 }
