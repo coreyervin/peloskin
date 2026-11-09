@@ -6,10 +6,10 @@
 
 ![Android 8+](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7f52ff?logo=kotlin&logoColor=white)
-![APK size](https://img.shields.io/badge/APK-under%201%20MB-41c7c7)
+![APK size](https://img.shields.io/badge/APK-about%201%20MB-41c7c7)
 ![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)
 
-<img src="docs/demo.gif" alt="PeloSkin over a spin class: the full layout with heart rate, switching rider with the picture bubble so the heart rate monitor switches too, a tap to shrink it to a single line and back, then holding the skin to end the ride and the summary card with output and heart rate" width="100%">
+<img src="docs/demo.gif" alt="PeloSkin over a spin class: the Peloton-style layout with the heart rate panel on the left, switching rider with the picture bubble so the heart rate panel follows that rider's monitor, a tap to shrink it to a single line and back, then holding the skin to end the ride, the workout summary panel, and the workout details page" width="100%">
 
 </div>
 
@@ -42,11 +42,12 @@ what it's built for.
 
 |   |   |
 |---|---|
-| **Full layout** | Cadence, Output and Resistance in big numbers, each with AVG (green ▲ or red ▼ trend arrow) and BEST. Below them is a solid strip with speed, distance, total output (kJ) and calories. |
+| **Full layout** | Laid out like the screen on Peloton's own bikes. Cadence, Output and Resistance in big numbers, each with AVG (green ▲ or red ▼ trend arrow) and BEST. Speed and distance tiles sit on the left with the rider's picture, and total output and calories on the right. |
 | **Single-line bar** | Tap the skin to shrink it to one thin line with the numbers you pick, and tap again to bring the full layout back. Drag the bar to the top or bottom edge, and it stays there. |
-| **Power zones** | A 7-zone bar with your % of FTP, using Peloton's zone boundaries. |
+| **Power zones** | Peloton's zone box above your output: the zone, 7 colored segments with the watts each zone starts at, and your % of FTP. |
 | **Hold to end ride** | Press and hold the skin to end your ride and see its summary straight away. There's also an **End ride** button in settings. |
-| **Heart rate** | Pair any Bluetooth heart rate strap or armband, like in the Peloton app. Beats per minute show in both layouts, with the heart rate zone in the full layout. |
+| **Heart rate** | Pair any Bluetooth heart rate strap or armband, like in the Peloton app. The full layout gets Peloton's heart rate panel on the left edge: zone, beats per minute, % of max, the 5-zone meter, and time in zones 4–5 with a ring colored by time in each zone. The single-line bar shows beats per minute. |
+| **Personal record card** | Beat a best effort mid-ride and a card pops up in the top-right corner with the new watts and the old record. |
 | **mph or km/h** | Speed and distance in miles or kilometres. |
 
 **Your riding, kept by PeloSkin**
@@ -54,7 +55,7 @@ what it's built for.
 |   |   |
 |---|---|
 | **Riders** | Each rider has a name, a profile picture, and their own FTP, heart rate monitor, ride history and records. Their picture shows in the skin; tap it to switch rider, and PeloSkin connects to that rider's own heart rate monitor. |
-| **Ride summary** | When a ride ends: total and average output, cadence, distance and calories, an output graph, time in each power zone, best efforts, and how it compares with your last ride of the same length. With a heart rate monitor, also average and max heart rate, a heart rate graph and time in heart rate zones. Tap any past ride to see it again. |
+| **Workout complete** | When a ride ends you get Peloton's post-ride screen: a *Workout complete* bar, and a workout summary panel with the rider, medals for a new FTP or PRs, and the ride's totals, with the change since your last ride of the same length. **Workout details** opens the output graph, time in each power zone with its watt range, best efforts, and with a heart rate monitor the heart rate graph and time in each heart rate zone. Tap any past ride in settings to see it again. |
 | **Personal records** | Best 5-second, 1-minute, 5-minute and 20-minute output, plus best total output for each class length (20, 30, 45 minutes…). A gold banner calls out a new best the moment you set it. |
 | **Automatic FTP** | Your FTP is 95% of your best 20-minute average. PeloSkin tracks it on every ride and raises your FTP when you beat it. Easy rides never lower it, and a lower retest is one tap away. |
 | **Lifetime totals** | Each rider's total rides, time, output, distance and calories, counting every ride ever saved. |
@@ -68,11 +69,13 @@ what it's built for.
 | **Starts with the bike** | Starts at boot and after updates, and reconnects to the bike's sensors on its own. If Android restarts it mid-ride, the ride carries on. |
 | **One app** | Reads the bike itself, so there's nothing else to install or keep running. |
 
-<img src="docs/full.png" alt="PeloSkin full layout over a spin class: cadence, output and resistance with averages and bests, a power zone bar, and a strip with the rider's picture, speed, distance, total output, calories and heart rate with its zone" width="100%">
+<img src="docs/full.png" alt="PeloSkin full layout over a spin class: the heart rate panel on the left with zone, beats per minute, % of max and the zone meter; the power zone box above output; and along the bottom the rider's picture, speed and distance tiles, cadence, output and resistance with averages and bests, and total output and calories tiles" width="100%">
 
-<img src="docs/compact.png" alt="PeloSkin single-line bar over a spin class, with the rider's picture, cadence, output with zone blocks, resistance, speed, total output and heart rate" width="100%">
+<img src="docs/compact.png" alt="PeloSkin single-line bar over a spin class, with the rider's picture, cadence, output with power zone blocks, resistance, speed, total output and heart rate" width="100%">
 
-<img src="docs/summary.png" alt="PeloSkin ride summary: total output, average output, cadence, distance, calories and average heart rate, an output graph with the FTP line, a heart rate graph, time in each power zone and heart rate zone, and best efforts" width="70%">
+<img src="docs/summary.png" alt="PeloSkin after a ride: the Workout complete bar with Workout details and Done buttons, and the workout summary panel in the top-right corner with total output, average output, resistance and cadence, distance, calories and average heart rate, over the skin" width="100%">
+
+<img src="docs/details.png" alt="PeloSkin workout details page: a light sheet with the output graph, best and average watts, and time in each of the 7 power zones with their watt ranges on the left; the heart rate graph, time in each of the 5 heart rate zones and best efforts on the right" width="100%">
 
 ## Supported bikes
 
@@ -153,7 +156,7 @@ can run at once, but Grupetto's own overlay will show as well.
   Long-press it to put it on the home screen.
 - **End a ride:** press and hold the skin (either layout). A gold *Hold to end ride* bar fills
   over about 1.5 seconds; let go early to cancel. The ride is saved and its summary comes up right
-  away. You can also tap **End ride** in settings. Either way the skin keeps running, and the
+  away: tap **Workout details** for graphs and zones, and **Done** to close it. You can also tap **End ride** in settings. Either way the skin keeps running, and the
   next ride starts once you've stopped pedaling and start again.
 - **Turn it off:** open PeloSkin and tap **Stop**. That also ends the ride in progress. Leaving
   the settings screen doesn't stop the skin.
@@ -242,7 +245,7 @@ app/src/main/java/app/peloskin/
 │   └── store/           Settings, ride history, ride graphs, rider pictures, backup and checkpoint files
 ├── ui/
 │   ├── overlay/         The skin (full and single-line) and its overlay service
-│   ├── summary/         The after-ride summary card
+│   ├── summary/         The post-ride screen: workout complete bar, summary panel, details sheet
 │   └── settings/        Settings screen
 └── BootReceiver.kt      Start on boot and after updates
 ```
@@ -278,7 +281,7 @@ with location permission and Location turned on. PeloSkin uses it to find heart 
 never reads your location.
 
 **Will it slow the bike down?**
-It's under 1 MB, uses about 35 MB of memory and barely any CPU.
+It's about 1 MB, uses about 35 MB of memory and barely any CPU.
 
 ## Uninstall
 
@@ -293,8 +296,10 @@ The backup in `Documents/PeloSkin` stays until you delete it.
 - [Grupetto](https://github.com/doudar/grupetto) and [PeloMon](https://github.com/ihaque/pelomon)
   figured out how the bike's sensors and Peloton's sensor software work. PeloSkin's own code
   builds on what they documented.
-- [Figtree](https://github.com/erikdkennedy/figtree), the typeface, is under the SIL Open Font
-  License (see `FONT-LICENSE.txt`).
+- The skin is set in [Inter Tight](https://github.com/rsms/inter) and the settings screen in
+  [Figtree](https://github.com/erikdkennedy/figtree), both under the SIL Open Font License (see
+  `FONT-LICENSE.txt`). The skin's look follows the screen on Peloton's bikes; Peloton's logo and
+  font aren't used.
 
 ## Disclaimer
 
